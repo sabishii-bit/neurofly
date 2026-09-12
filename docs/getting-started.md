@@ -10,27 +10,16 @@
 
 ## Install
 
-Two packages live in this repository. `core/` is the runtime and `training/` is everything
-that builds and trains; install both, editable, into a virtual environment:
-
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e core[pc] -e training[dev]
 ```
 
-(The checkout as it stands shares the `flybody` checkout's environment next door,
-`..\flybody\.venv`; activate that instead of creating one.)
-
-| Extra | On | Adds | Needed for |
-|---|---|---|---|
-| `pc` | core | mss, pynput, sounddevice, soundfile, soundcard | screen and sound capture, keyboard and mouse |
-| `ws` | core | websockets | the WebSocket flavour of the server |
-| `flybody` | training | the MuJoCo fruit fly (from GitHub) | body tasks |
-| `dev` | training | pytest, ruff | tests and lint |
-
-This puts two commands on the path: `neurofly` (training) and `neurofly-core` (runtime).
-`python -m neurofly_training` and `python -m neurofly_core` are the same things.
+That is the whole install for the PC side. Add `training[flybody]` for the simulated body,
+and see [Installation](installation.md) for every extra, GPU support, the bindings and the
+problems people hit. It puts two commands on the path: `neurofly` (training) and
+`neurofly-core` (runtime).
 
 ## Fetch the connectome
 

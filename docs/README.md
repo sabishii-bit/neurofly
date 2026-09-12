@@ -6,7 +6,8 @@ Python; the result is an artifact that runs from any language.
 
 | Read this | When you want to |
 |---|---|
-| [Getting started](getting-started.md) | install, fetch the data, run the tests, run something in five minutes |
+| [Installation](installation.md) | requirements, the two packages and their extras, the body, GPU, the data, the bindings, known install problems |
+| [Getting started](getting-started.md) | run something in five minutes once installed |
 | [Concepts](concepts.md) | understand the brain, the subsets, the encoders and decoders, and what is real versus engineered |
 | [The PC](pc.md) | let the brain see the screen, hear the sound, and use keyboard and mouse |
 | [The body](body.md) | make the simulated fly walk, with or without the brain |

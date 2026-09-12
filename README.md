@@ -64,7 +64,7 @@ artifacts/       exported controllers, what you ship (git-ignored by default)
 ## Quick start
 
 ```powershell
-pip install -e core[pc] -e training[dev]        # plus flybody for body tasks: training[flybody]
+pip install -e core[pc] -e training[dev]        # see docs/installation.md for extras, GPU, bindings
 neurofly download                                # the connectome files (about 570 MB)
 python -m pytest -q                              # about 25 s
 
