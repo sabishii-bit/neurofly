@@ -1,8 +1,9 @@
 # neurofly
 
-A fruit fly connectome run as a spiking network and wired to a world. Train it in Python,
-export the result as a plain artifact, run that artifact from Python, Node, Rust, or
-anything that can start a process.
+A fruit fly connectome run as a spiking network and wired to a world. Build the brain once
+in Python, then train it and run it from Python, Node, Rust, Go, or anything that can start
+a process: the controller travels as a plain artifact, and the runtime speaks a small
+protocol that covers both using the brain and training it.
 
 * **Brain**: the MaleCNS v1.0 connectome (165,122 traced neurons, 25.6 M synapses, brain and
   nerve cord) as a leaky integrate-and-fire network with the parameters of Shiu et al.,
@@ -10,10 +11,21 @@ anything that can start a process.
 * **Worlds**: the PC (screen and sound in through the retina and the auditory neurons;
   keyboard and mouse out of the descending neurons), and the `flybody` MuJoCo fruit fly
   (joints and contacts in, 59 actuators out).
-* **Training**: PPO, evolution strategies over a neuron-to-control table, imitation of your
-  own recorded use of the PC, surrogate-gradient training through the spiking dynamics, and
-  dopamine-gated plasticity. A `Task` you write supplies reward and episode structure;
-  `neurofly eval` scores any artifact against recordings.
+* **What training means here**: the neurons and their wiring are fixed. What is trained is
+  the policy (the map from readout firing rates to controls), optionally the encoder tables,
+  and optionally some synapses through dopamine-gated plasticity. A `Task` you write
+  supplies reward and episode structure; `neurofly eval` scores any artifact against
+  recordings.
+* **Training from any language**: `neurofly build` makes a base artifact (brain and encoders,
+  no policy). A trainer in Node, Rust, Go or anything else serves it, reads the feature
+  vector with `observe` (or `body_step` for the body), runs whatever optimiser it likes,
+  installs the result with `set_policy` and writes a complete artifact with `save`. Passing
+  a reward drives plasticity inside the brain. `examples/node_train_es.js` does all of this
+  in JavaScript.
+* **Bundled Python trainers**: PPO, evolution strategies, imitation of your own recorded use
+  of the PC, and surrogate-gradient training through the spiking dynamics. The last one is
+  the only method that cannot run from another language, because it needs gradients through
+  the brain rather than features out of it.
 * **Experiments**: stimulate, silence and probe any neurons by connectome type while the
   brain runs, from the command line or the API; replay videos with the spike raster beside
   the frames; a gain calibration sweep; a small `toy` brain with a designed path for tests.
@@ -40,7 +52,8 @@ training/        neurofly-training: connectome loading, body and PC environments
                  imitation, recording, export, the `neurofly` command. Depends on core.
 artifact/        SPEC.md: the artifact format and the server protocol, for other languages.
 bindings/        node/, rust/ and go/ packages that spawn the runtime; python/ points at core.
-examples/        a Task to copy, and a Node program that consumes an artifact.
+examples/        a Task to copy, Node programs that consume and that train an artifact, a
+                 Three.js viewer for the body.
 docs/            how to use and extend everything.
 tests/           pytest suite: tests/core and tests/training.
 data/            inputs you download or record (git-ignored): malecns/, recordings/
@@ -69,7 +82,33 @@ const fly = new NeuroFly("artifacts/myapp"); await fly.start();
 const r = await fly.step({ frame, width: 320, height: 240 });   // r.keys, r.dx, r.dy, ...
 ```
 
+```js
+// training from Node: features in, your optimiser, policy out (examples/node_train_es.js)
+const base = new NeuroFly("artifacts/base"); await base.start();
+const { features } = await base.observe({ frame, width: 320, height: 240, reward });
+await base.setPolicy({ type: "linear", W, b });
+await base.save("artifacts/trained");
+```
+
 Full documentation: [docs/](docs/README.md). The runtime alone: [core/](core/README.md).
+
+## Where Python is required
+
+Three things, and only these:
+
+1. **Building the base artifact** from the connectome: loading the data, choosing a subset,
+   building the encoder tables from the annotations. One command, once
+   (`neurofly build`), and the artifact is the hand-off.
+2. **Surrogate-gradient training**, which backpropagates through the spiking dynamics and
+   therefore needs the brain in-process rather than behind a protocol.
+3. **The body simulation** during training, which uses MuJoCo through `flybody`. A trainer
+   in another language runs the exported MuJoCo model (`neurofly export-body --mjcf`) in
+   its own MuJoCo and feeds observations to `body_step`.
+
+Everything else, running and training included, works through the protocol. PPO is bundled
+because the library was handy, not because the brain requires it; the feature vector goes
+over a JSON or gRPC round trip (about 13 ms here), which suits evolution strategies and
+imitation better than optimisers that need millions of steps.
 
 ## What is real and what is engineered
 
