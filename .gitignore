@@ -1,0 +1,23 @@
+data/
+runs/
+videos/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+*.mp4
+.venv
+
+# build / tooling
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.log
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

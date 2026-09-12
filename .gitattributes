@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.mp4 binary
+*.npz binary
+*.pkl binary
+*.feather binary
+*.zip binary

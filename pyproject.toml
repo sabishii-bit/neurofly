@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flybrain-body"
+version = "0.1.0"
+description = "Fruit fly connectome (MaleCNS v1.0) run as a spiking network and wired to the flybody MuJoCo body, with RL and evolutionary training tools."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy==1.26.4",          # pinned by flybody
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "requests",
+    "tqdm",
+    "torch",
+    "gymnasium",
+    "stable-baselines3>=2.3",
+    "tensorboard",
+    "imageio",
+    "imageio-ffmpeg",
+    "neuprint-python",        # optional live queries against neuprint.janelia.org
+]
+
+[project.optional-dependencies]
+# flybody is not on PyPI. Locally we use the editable checkout next door; on a
+# fresh machine `pip install -e .[flybody]` pulls it from GitHub.
+flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["flybrain_body*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:Sparse CSR tensor support is in beta:UserWarning",
+    "ignore:Sparse invariant checks are implicitly disabled:UserWarning",
+]
