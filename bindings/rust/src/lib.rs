@@ -86,6 +86,8 @@ pub struct Step {
     observe_only: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detections: Option<Vec<Detection>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    odours: Option<Vec<f32>>,
 }
 
 /// One detected object for an artifact with a detection encoder: a class id (index into
@@ -104,7 +106,7 @@ impl Step {
     pub fn rgb(frame: &[u8], width: u32, height: u32) -> Step {
         Step { op: "step", frame: B64.encode(frame), width, height, format: None, audio: None,
                sample_rate: None, channels: None, reward: None, observe_only: None,
-               detections: None }
+               detections: None, odours: None }
     }
 
     /// An encoded image (`"png"` or `"jpeg"`).
@@ -134,6 +136,12 @@ impl Step {
     /// Objects a detector found in this frame.
     pub fn detections(mut self, dets: Vec<Detection>) -> Step {
         self.detections = Some(dets);
+        self
+    }
+
+    /// Odour channel values in [0, 1], in the artifact's `odour_channels` order.
+    pub fn odours(mut self, values: Vec<f32>) -> Step {
+        self.odours = Some(values);
         self
     }
 

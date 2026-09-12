@@ -147,3 +147,7 @@ neurons in the same order.
   grids to the policy directly. Recordings' detections are computed once and cached next
   to the video, so `imitate` and `surrogate` pay for the detector on the first pass only.
   See [The PC](pc.md) for the backends.
+* **Odours.** `--odours health,danger` (from your Task) or `--odours detections` drives
+  olfactory receptor neurons, one glomerulus per channel. With `--plasticity` this is the
+  input the mushroom body learns about; `--include-odours` also gives the channels to the
+  policy.

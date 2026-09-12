@@ -47,6 +47,7 @@ message InfoReply {
   int32 n_obs = 14;               // body: observation length
   string obs_json = 15;           // body: {"keys": [...], "slices": {name: [start, stop]}}
   repeated string detection_classes = 16;   // PC: the classes a detection encoder expects
+  repeated string odour_channels = 17;      // PC: the odour channels an olfaction encoder expects
 }
 
 message StepRequest {
@@ -60,6 +61,8 @@ message StepRequest {
   double reward = 8;
   bool observe_only = 9;
   repeated Detection detections = 10;   // objects a detector found, for a detection encoder
+  repeated float odours = 11;           // one value per Info.odour_channels, in [0, 1];
+                                        // empty keeps the last odours
 }
 
 message Detection {

@@ -141,6 +141,35 @@ Detections on a recording are computed once and cached next to the video. `--det
 sets the cells per class, `--detection-gain` the drive, and `--include-detections` also
 hands the grids to the policy directly.
 
+## Smell: odours the brain can learn about
+
+The fly smells through some fifty kinds of receptor neuron, one kind per glomerulus, and
+its learning circuit (the mushroom body, taught by the dopamine neurons that
+`--dopamine-punish` already drives) is built around them. `--odours` gives the brain that
+input: each named channel drives the receptor neurons of one glomerulus, so "danger" or
+"low health" is a smell the brain's own associative memory can attach the punishment to.
+
+```powershell
+neurofly train --task pc --brain malecns --window "My App" --keys w,a,s,d \
+    --reward my_project.py:MyTask --odours health,danger --plasticity --dopamine-punish 20
+```
+
+Where the values come from:
+
+* **Your Task.** Add an `odours(frame, audio, info)` method returning `{"health": 0.8,
+  "danger": 0.0}` (values in [0, 1]; a missing channel keeps its last value) or a vector
+  in channel order. Health bars, ammo, distance to the goal, "in combat": anything slow
+  that the fly should learn to like or avoid.
+* **Detections.** `--odours detections` makes one channel per detected class, set to the
+  best score of that class in the frame, so an enemy in view also has a smell.
+* **Another program.** `odours` on the step request, in the JSON protocol, gRPC and the
+  bindings; the artifact lists the channels it expects.
+
+`--odour-gain` is the drive at a channel value of 1; `--odour-adapt` lets the drive fade
+while a channel stays constant, as receptors do; `--include-odours` also hands the channel
+values to the policy directly. The channels travel in the artifact; the meaning of each is
+yours.
+
 ## Reward: writing a Task
 
 The raw interface only sees pixels and sound. A `Task` turns them into reward and episode
@@ -171,6 +200,10 @@ class Score(Task):
         bar = frame[10:14, 20:220]                  # a strip of the screen
         info["health"] = float((bar[..., 1] > 128).mean())
         return info["health"] - 0.5
+
+    def odours(self, frame, audio, info):
+        # with --odours health: a smell the mushroom body can learn about
+        return {"health": info.get("health", 0.0)}
 
     def done(self, frame, audio, info):
         return info["health"] == 0.0

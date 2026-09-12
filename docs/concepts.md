@@ -116,6 +116,16 @@ is a particular group of neurons firing. Nothing in the connectome says which ne
 those should be, so the assignment is engineered, like the audition map. The classes
 travel in the artifact; the detector does not.
 
+### PC: olfaction (`neurofly_core.encode.olfaction`)
+
+The connectome has about 2,600 olfactory receptor neurons in 53 types, one type per
+glomerulus of the antennal lobe, and the mushroom body behind them is the fly's learning
+circuit. An odour channel (`--odours health,danger`) drives the receptor neurons of one
+glomerulus at a level in [0, 1]. Which glomerulus is engineered; what the antennal lobe
+and mushroom body do with it is the connectome's. With `--plasticity` and
+`--dopamine-punish`, punishment arriving while an odour is present changes the synapses
+that odour's activity reached, which is the fly's own form of aversive learning.
+
 ## Readouts and outputs
 
 `--readout` names the population the agent sees, joined by `+`: `motor` (leg motor
@@ -141,8 +151,8 @@ sensory neuron serves, which eye and column each optic-lobe neuron belongs to, a
 head neurons are auditory.
 
 Engineered by you: the LIF parameters (uniform across neurons), every encoder (the maps from
-sensors, pixels, sound and detected objects onto neurons), the object detector itself when
-you use one (a separate network with no biological counterpart), and the map from readout
-rates to actions. Those
+sensors, pixels, sound, detected objects and odours onto neurons), the object detector
+itself when you use one (a separate network with no biological counterpart), what counts
+as an odour, and the map from readout rates to actions. Those
 maps are the parts you train. A fly that walks or uses the PC is "a policy that learned to
 do it through the connectome's dynamics", not "the connectome knows how".

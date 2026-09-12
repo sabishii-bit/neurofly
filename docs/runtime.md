@@ -122,6 +122,11 @@ exports `detector.onnx`, which ONNX Runtime loads in every language the bindings
 `neurofly_training.pc.detect.OnnxDetector` shows the pre- and post-processing to copy. A
 step without detections is a step with nothing detected.
 
+An artifact built with `--odours` likewise expects `odours` on the step: a vector in the
+order of `info`'s `odour_channels` (or a name-to-value object over JSON), values in [0, 1];
+a step without them keeps the last values. What the channels mean is the consumer's
+business: health, ammo, "an enemy is in view".
+
 ## Training from another language
 
 The trainable part of a controller is the policy: a linear table or a small MLP on top of

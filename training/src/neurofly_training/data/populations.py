@@ -46,6 +46,11 @@ class Populations:
         self.wind_gravity = cx.select(superclass="cb_sensory", subclass="wind_gravity")
         self.auditory = cx.select(superclass="cb_sensory", subclass="auditory")
         self.haltere = cx.select(subclass="haltere")
+        self.olfactory = cx.select(class_="olfactory")             # receptor neurons, by glomerulus
+        types = cx.neurons["type"].values[self.olfactory]
+        self.glomeruli = {str(t): self.olfactory[types == t]
+                          for t in sorted({str(t) for t in types if t is not None})}
+        self.gustatory = cx.select(class_re="gustat")
         self.dopamine = cx.select(class_="DAN")
         self.ppl1 = cx.select(class_="DAN", type_re=r"^PPL1")
         self.all_leg_motor = np.unique(np.concatenate(list(self.leg_motor.values())))
@@ -109,7 +114,8 @@ class Populations:
                          f"tactile {len(self.leg_tactile[(t, side)]):4d}")
         lines.append(f"  descending {len(self.descending)}, ascending {len(self.ascending)}, "
                      f"wind/gravity {len(self.wind_gravity)}, haltere {len(self.haltere)}, "
-                     f"auditory {len(self.auditory)}, "
+                     f"auditory {len(self.auditory)}, olfactory {len(self.olfactory)} in "
+                     f"{len(self.glomeruli)} glomeruli, gustatory {len(self.gustatory)}, "
                      f"dopamine {len(self.dopamine)} (PPL1 {len(self.ppl1)})")
         ret = self.retina()
         lines.append(f"  retina columns: left {len(ret['L']['idx'])}, "

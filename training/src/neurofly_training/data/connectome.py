@@ -360,6 +360,12 @@ class Connectome:
             connect(retina[s], halves["visual_projection"][k])
             connect(halves["visual_projection"][k], halves["cb_intrinsic"][k])
             connect(halves["cb_intrinsic"][k], halves["descending_neuron"][k])
+        # and a smell path: every glomerulus onto its own few central interneurons, which
+        # already reach the descending readout, so an odour can move the output too
+        orn = np.flatnonzero(df["class"].values == "olfactory")
+        if len(orn):
+            connect(orn, halves["cb_intrinsic"][0][: max(4, len(halves["cb_intrinsic"][0]) // 4)],
+                    fan_in=4, weight=30.0)
         # the feed-forward path is excitatory: make its presynaptic neurons cholinergic
         pre_ids = np.unique(cols)
         df.loc[pre_ids, "nt"] = "acetylcholine"
@@ -422,7 +428,11 @@ class Connectome:
             cls_ = "mechanosensory_proprioceptive" if (k // 6) % 3 == 0 else "mechanosensory_tactile"
             df.loc[i, ["entryNerve", "rootSide", "class"]] = [LEG_NERVE[t], side, cls_]
         head = np.flatnonzero(superclass == "cb_sensory")
+        glomeruli = ["ORN_DA1", "ORN_DL3", "ORN_VA1d", "ORN_DM2", "ORN_VM7d", "ORN_DC1"]
         for k, i in enumerate(head):
+            if k % 4 == 3:           # olfactory receptor neurons, a few glomeruli
+                df.loc[i, ["class", "type"]] = ["olfactory", glomeruli[(k // 4) % len(glomeruli)]]
+                continue
             sub = ["wind_gravity", "haltere", "auditory"][k % 3]
             df.loc[i, ["class", "subclass"]] = ["mechanosensory", sub]
         df.loc[superclass == "descending_neuron", "subclass"] = "xn"

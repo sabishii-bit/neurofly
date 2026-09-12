@@ -164,12 +164,13 @@ def _losses(logits: torch.Tensor, y: torch.Tensor, mask: torch.Tensor, pos_weigh
 
 def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, lr: float = 1e-2,
                     window: int = 8, l2: float = 1e-4, device: str = "cpu",
-                    verbose: bool = False, detections=None) -> dict:
+                    verbose: bool = False, detections=None, odours=None) -> dict:
     """Train the retina's input map and a linear head end to end on (frames, actions).
 
     ``frames``: list of RGB uint8 arrays; ``chunks``: list of audio chunks or None;
     ``actions``: (T, n_actions) targets in the layout's action space; ``detections``: a
-    list of per-frame detections when the model has a detection encoder. The model's
+    list of per-frame detections when the model has a detection encoder; ``odours``: a
+    list of per-frame odour vectors when it has an olfaction encoder. The model's
     retina and policy are replaced by the trained ones. Returns a history dict.
     """
     layout = model.layout
@@ -200,6 +201,8 @@ def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, l
         model.audition.reset()
     if model.detection is not None:
         model.detection.reset()
+    if model.olfaction is not None:
+        model.olfaction.reset()
     signals, aud, extras = [], [], []
     for t in range(T):
         on, off = model.retina.signals(frames[t])
@@ -209,6 +212,9 @@ def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, l
         if model.detection is not None:
             d = model.detection(detections[t] if detections else None).to(device).detach()
             const = d if const is None else const + d
+        if model.olfaction is not None:
+            o = model.olfaction(odours[t] if odours else None).to(device).detach()
+            const = o if const is None else const + o
         aud.append(const)
         if n_extra:
             model._frame, model._chunk = frames[t], (chunks[t] if chunks else None)

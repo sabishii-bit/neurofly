@@ -8,6 +8,7 @@ scripts at it with ``--reward mypackage.module:MyTask`` (or
     reset(controls, video, audio)   start an episode, e.g. press the restart key
     reward(frame, audio, state, info) -> float
     done(frame, audio, info) -> bool
+    odours(frame, audio, info) -> {"channel": value} | vector | None   (for --odours)
 
 ``PatchBrightness`` is a worked example that reads a rectangle of the screen
 (a health bar, a score, a target) and rewards its brightness.
@@ -33,6 +34,12 @@ class Task:
 
     def done(self, frame: np.ndarray, audio: np.ndarray | None, info: dict) -> bool:
         return False
+
+    def odours(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
+        """What the fly should smell this step, for a model built with ``--odours``: a
+        dict of channel name to value in [0, 1] (missing channels keep their last value),
+        a vector in channel order, or None to change nothing."""
+        return None
 
 
 class NoTask(Task):

@@ -12,6 +12,8 @@ Two kinds of task share one ``make_env``:
 """
 from __future__ import annotations
 
+import numpy as np
+
 import os
 
 import gymnasium as gym
@@ -42,6 +44,7 @@ PC_ARGS = ["fps", "window", "region", "monitor", "audio", "keys", "buttons", "mo
            "brain_ms", "retina_mode",
            "retina_gain", "retina_temporal", "audio_gain", "include_frame", "include_audio",
            "detect", "detection_grid", "detection_gain", "include_detections",
+           "odours", "odour_gain", "odour_adapt", "include_odours",
            "dopamine_punish"]
 ENV_ARGS = BODY_ARGS + PC_ARGS
 
@@ -99,6 +102,45 @@ def make_layout(keys=None, buttons=None, mouse: bool = False, scroll: bool = Fal
                          pad_buttons=parse_names(pad_buttons), axes=parse_names(axes))
 
 
+def odour_channels(odours, detect_classes=None) -> list[str]:
+    """``--odours``: None -> no olfaction; 'detections' -> one channel per detected class;
+    otherwise comma-separated channel names (or a list)."""
+    if odours is None or str(odours).lower() in ("", "none"):
+        return []
+    if isinstance(odours, str) and odours.lower() == "detections":
+        if not detect_classes:
+            raise ValueError("--odours detections needs --detect")
+        return list(detect_classes)
+    return parse_names(odours)
+
+
+def odour_source(model, task=None):
+    """A callable ``(frame, chunk, info, detections) -> odours or None`` for a model with
+    an olfaction encoder: the detection classes' presence when it was built with
+    ``--odours detections``, else what the Task's ``odours`` hook returns."""
+    if model.olfaction is None:
+        return None
+    if model.config.meta.get("odours") == "detections":
+        channels = list(model.olfaction.channels)
+
+        def from_detections(frame, chunk, info, detections):
+            v = np.zeros(len(channels), np.float32)
+            for d in detections or []:
+                c = d.get("label") if isinstance(d, dict) else None
+                if c is None and isinstance(d, dict):
+                    c = d["class"] if isinstance(d["class"], str) else \
+                        (model.detection.classes[int(d["class"])] if model.detection else None)
+                if c in channels:
+                    j = channels.index(c)
+                    v[j] = max(v[j], float(d.get("score", 1.0)))
+            return v
+
+        return from_detections
+    if task is None:
+        return None
+    return lambda frame, chunk, info, detections: task.odours(frame, chunk, info)
+
+
 def parse_grid(grid, default=(6, 8)) -> tuple[int, int]:
     if grid is None or grid == "":
         return tuple(default)
@@ -122,7 +164,8 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                   audio_gain: float = 15.0, include_frame: bool = False,
                   include_audio: bool = False, dopamine_punish: float = 0.0,
                   detect=None, detection_grid=(6, 8), detection_gain: float = 15.0,
-                  include_detections: bool = False,
+                  include_detections: bool = False, odours=None, odour_gain: float = 15.0,
+                  odour_adapt: float = 0.0, include_odours: bool = False,
                   sample_rate: int = 16000, name: str | None = None, policy=None,
                   **_ignored):
     """The ``neurofly_core.Model`` a PC task uses, without any sources. This is what
@@ -136,6 +179,7 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                          synthetic_n=synthetic_n)
     from neurofly_training.pc.detect import classes_for
     classes = list(detect) if isinstance(detect, (list, tuple)) else classes_for(detect)
+    channels = odour_channels(odours, classes)
     return build_model(cx, layout, readout=readout or default_readout(task), dt=dt,
                        brain_ms=brain_ms, brain_gain=brain_gain, retina_mode=retina_mode,
                        retina_gain=retina_gain, retina_temporal=retina_temporal,
@@ -144,9 +188,13 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                        include_audio=include_audio, plasticity=plasticity,
                        detect_classes=classes, detection_grid=parse_grid(detection_grid),
                        detection_gain=detection_gain, include_detections=include_detections,
+                       odour_channels=channels, odour_gain=odour_gain, odour_adapt=odour_adapt,
+                       include_odours=include_odours,
                        dopamine_punish=dopamine_punish, policy=policy, name=name,
                        meta={"brain": brain, "subset": subset or default_subset(task),
-                             "detect": detect if isinstance(detect, str) else None},
+                             "detect": detect if isinstance(detect, str) else None,
+                             "odours": "detections" if str(odours).lower() == "detections"
+                             else (",".join(channels) if channels else None)},
                        device=device)
 
 
@@ -203,7 +251,8 @@ def make_pc_env(task: str = "pc", seed: int = 0, fps: float = 10.0, window: str 
             controls = make_controls("log" if dry_run else "pc", model.layout)
     task_obj = task_obj if task_obj is not None else load_task(reward)
     return PCEnv(model, video=video_source, audio=audio_source, controls=controls, task=task_obj,
-                 fps=fps, max_steps=max_steps, detector=detector)
+                 fps=fps, max_steps=max_steps, detector=detector,
+                 odours=odour_source(model, task_obj))
 
 
 def make_env(task: str = "forward", seed: int = 0, brain: str = "none", subset: str | None = None,
@@ -310,4 +359,13 @@ def add_env_args(p, *, brain_default: str = "none",
                    help="drive at full coverage of a cell, mV")
     g.add_argument("--include-detections", action="store_true",
                    help="also give the policy the detection grids")
+    g.add_argument("--odours", default=None, metavar="CHANNELS",
+                   help="odour channels onto olfactory receptor neurons: names your Task's "
+                        "odours() fills (e.g. health,danger), or 'detections' for one channel "
+                        "per detected class")
+    g.add_argument("--odour-gain", type=float, default=15.0, help="drive at channel value 1, mV")
+    g.add_argument("--odour-adapt", type=float, default=0.0,
+                   help="0 to 1: how much the drive fades while a channel stays constant")
+    g.add_argument("--include-odours", action="store_true",
+                   help="also give the policy the odour channels")
     return p

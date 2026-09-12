@@ -37,6 +37,7 @@ from neurofly_core.brain.plasticity import DopamineHebbian
 from neurofly_core.controls import ControlLayout, ControlState
 from neurofly_core.encode.audition import AuditionEncoder
 from neurofly_core.encode.detection import DetectionEncoder
+from neurofly_core.encode.olfaction import OlfactionEncoder
 from neurofly_core.encode.vision import RetinaEncoder, luminance
 from neurofly_core.selection import resolve
 
@@ -51,6 +52,7 @@ class ModelConfig:
     frame_grid: tuple = (12, 16)
     include_audio: bool = False     # PC: append the audio band levels to the features
     include_detections: bool = False  # PC: append the detection grids to the features
+    include_odours: bool = False    # PC: append the odour channels to the features
     include_proprio: bool = False   # body: append the raw observation to the features
     plasticity: bool = False        # reward acts as dopamine on synapses onto the readout
     plasticity_lr: float = 1e-3
@@ -262,6 +264,7 @@ class Model(BrainModel):
     def __init__(self, brain: LIFBrain, *, readout_idx, layout: ControlLayout,
                  retina: RetinaEncoder, audition: AuditionEncoder | None = None,
                  detection: DetectionEncoder | None = None,
+                 olfaction: OlfactionEncoder | None = None,
                  policy=None, config: ModelConfig | None = None, punish_idx=None,
                  neuron_ids=None, neuron_types=None, neuron_superclass=None,
                  neuron_positions=None, positions_known=None):
@@ -273,8 +276,10 @@ class Model(BrainModel):
         self.retina = retina
         self.audition = audition
         self.detection = detection
+        self.olfaction = olfaction
         self.include_audio = self.config.include_audio and audition is not None
         self.include_detections = self.config.include_detections and detection is not None
+        self.include_odours = self.config.include_odours and olfaction is not None
         self._frame = None
         self._chunk = None
 
@@ -287,6 +292,8 @@ class Model(BrainModel):
             n += self.audition.n_bands
         if self.include_detections:
             n += self.detection.n_inputs
+        if self.include_odours:
+            n += self.olfaction.n_channels
         return n
 
     @property
@@ -300,6 +307,8 @@ class Model(BrainModel):
             named["audition"] = self.audition.targets
         if self.detection is not None:
             named["detection"] = self.detection.targets
+        if self.olfaction is not None:
+            named["olfaction"] = self.olfaction.targets
         return named
 
     def reset(self) -> None:
@@ -309,6 +318,8 @@ class Model(BrainModel):
             self.audition.reset()
         if self.detection is not None:
             self.detection.reset()
+        if self.olfaction is not None:
+            self.olfaction.reset()
         self._frame = self._chunk = None
 
     def features(self) -> np.ndarray:
@@ -319,14 +330,17 @@ class Model(BrainModel):
             parts.append(self.audition.bands(self._chunk))
         if self.include_detections:
             parts.append(self.detection.levels)
+        if self.include_odours:
+            parts.append(self.olfaction.levels)
         return np.concatenate(parts).astype(np.float32)
 
     def observe(self, frame: np.ndarray, audio: np.ndarray | None = None,
-                reward: float = 0.0, detections=None) -> np.ndarray:
+                reward: float = 0.0, detections=None, odours=None) -> np.ndarray:
         """Drive the neurons with a frame (RGB uint8), the sound since the last
-        observation and, when the model has a detection encoder, the objects a detector
-        found in the frame; run the brain for ``brain_ms``; return the feature vector.
-        ``reward`` is dopamine for plasticity and, when negative, punishment."""
+        observation and, when the model has the encoders, the objects a detector found
+        in the frame and the odour channels; run the brain for ``brain_ms``; return the
+        feature vector. ``reward`` is dopamine for plasticity and, when negative,
+        punishment. Odours are held between observations; None keeps the last."""
         self._frame = np.asarray(frame)
         self._chunk = audio
         drive = self.retina(self._frame)
@@ -334,12 +348,14 @@ class Model(BrainModel):
             drive = drive + self.audition(audio)
         if self.detection is not None:
             drive = drive + self.detection(detections)
+        if self.olfaction is not None:
+            drive = drive + self.olfaction(odours)
         self._run(drive, reward)
         return self.features()
 
     def step(self, frame: np.ndarray, audio: np.ndarray | None = None,
-             reward: float = 0.0, detections=None) -> tuple[ControlState, dict]:
-        features = self.observe(frame, audio, reward, detections)
+             reward: float = 0.0, detections=None, odours=None) -> tuple[ControlState, dict]:
+        features = self.observe(frame, audio, reward, detections, odours)
         action = self.act(features)
         state = self.layout.decode(action)
         info = {"t": self.t, "spikes": self.last_spikes, "action": action.tolist(),

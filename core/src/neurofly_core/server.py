@@ -80,6 +80,13 @@ def decode_detections(req: dict):
     return req.get("detections") or None
 
 
+def decode_odours(req: dict):
+    """The request's ``odours`` (a list of channel values or a dict of name to value), or
+    None (which keeps the last odours)."""
+    o = req.get("odours")
+    return None if o is None else o
+
+
 def selection_from(req: dict) -> dict:
     sel = {k: req[k] for k in SELECTION_KEYS if k in req}
     if len(sel) != 1:
@@ -114,7 +121,9 @@ class Session:
                         "sample_rate": m.audition.sample_rate if m.audition else None,
                         "retina_grid": list(m.retina.grid),
                         "detection_classes": (list(m.detection.classes) if m.detection
-                                              else None)})
+                                              else None),
+                        "odour_channels": (list(m.olfaction.channels) if m.olfaction
+                                           else None)})
         else:
             out.update({"has_audition": False, "sample_rate": None, "retina_grid": [],
                         "n_obs": m.n_obs,
@@ -143,15 +152,16 @@ class Session:
         return out
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
-                    reward: float = 0.0, observe_only: bool = False, detections=None) -> dict:
+                    reward: float = 0.0, observe_only: bool = False, detections=None,
+                    odours=None) -> dict:
         m = self.model
         if m.kind != "pc":
             raise ValueError("step / observe need a PC artifact; use body_step for a body one")
         if observe_only or m.policy is None:
-            feats = m.observe(frame, audio, reward, detections)
+            feats = m.observe(frame, audio, reward, detections, odours)
             out = {"ok": True, "t": m.t, "features": feats.tolist(), "spikes": m.last_spikes}
         else:
-            state, info = m.step(frame, audio, reward, detections)
+            state, info = m.step(frame, audio, reward, detections, odours)
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"],
                    "action": info["action"], "held": info["held"]}
             out.update(state.to_dict())
@@ -213,7 +223,8 @@ class Session:
                 observe = (op == "observe") or bool(req.get("observe_only"))
                 return self.step_arrays(decode_frame(req), decode_audio(req),
                                         float(req.get("reward", 0.0)), observe_only=observe,
-                                        detections=decode_detections(req))
+                                        detections=decode_detections(req),
+                                        odours=decode_odours(req))
             if op == "set_policy":
                 m.policy = self.policy_from(req)
                 return {"ok": True, "type": m.policy.kind}

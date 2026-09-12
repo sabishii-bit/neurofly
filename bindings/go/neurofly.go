@@ -53,6 +53,7 @@ type Step struct {
 	Channels   int
 	Reward     *float64
 	Detections []Detection // objects a detector found, for a detection encoder
+	Odours     []float32   // odour channel values in [0, 1], in the artifact's channel order
 }
 
 // Detection is one detected object: a class id (index into the artifact's detection
@@ -209,6 +210,9 @@ func (c *Client) stepRequest(op string, s Step) map[string]any {
 	}
 	if len(s.Detections) > 0 {
 		req["detections"] = s.Detections
+	}
+	if len(s.Odours) > 0 {
+		req["odours"] = s.Odours
 	}
 	return req
 }

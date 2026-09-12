@@ -15,6 +15,7 @@ export interface Info {
   has_audition: boolean; sample_rate: number | null; retina_grid: [number, number];
   has_annotations: boolean; has_positions: boolean; populations: Record<string, number>;
   detection_classes: string[] | null;
+  odour_channels: string[] | null;
 }
 
 export interface StepInput {
@@ -32,6 +33,9 @@ export interface StepInput {
   observeOnly?: boolean;
   /** Objects a detector found, for an artifact with a detection encoder (see Info.detection_classes). */
   detections?: Detection[];
+  /** Odour channel values in [0, 1] (a vector in Info.odour_channels order, or name to value);
+   *  omitted keeps the last odours. */
+  odours?: number[] | Record<string, number>;
 }
 
 /** One detected object: a class id or name from the artifact's classes, a box in fractions
@@ -138,6 +142,7 @@ export class NeuroFly {
     if (s.reward !== undefined) req.reward = s.reward;
     if (s.observeOnly) req.observe_only = true;
     if (s.detections && s.detections.length) req.detections = s.detections;
+    if (s.odours !== undefined) req.odours = s.odours;
     return req;
   }
 

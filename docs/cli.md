@@ -77,6 +77,10 @@ PC options (the same commands):
 | `--detection-grid` | 6,8 | cells per detected class |
 | `--detection-gain` | 15 | drive at full coverage of a cell, mV |
 | `--include-detections` | off | also give the policy the detection grids |
+| `--odours` | none | odour channels onto olfactory receptor neurons: names your Task's `odours()` fills (`health,danger`), or `detections` for one channel per detected class |
+| `--odour-gain` | 15 | drive at a channel value of 1, mV |
+| `--odour-adapt` | 0 | 0 to 1: how much the drive fades while a channel stays constant |
+| `--include-odours` | off | also give the policy the odour channels |
 | `--dopamine-punish` | 0 | mV on PPL1 dopamine neurons while reward is negative |
 
 ### train

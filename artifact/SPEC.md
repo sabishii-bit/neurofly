@@ -13,6 +13,7 @@ A trained controller on disk, readable from any language. Version 1.
                          matrix_*.bin targets.bin              (projection mode)
   audition/              matrix_*.bin targets.bin              (optional)
   detection/             matrix_*.bin targets.bin              (optional)
+  olfaction/             matrix_*.bin targets.bin              (optional)
   policy/                W.bin b.bin  |  W0.bin b0.bin ... obs_mean.bin obs_var.bin   (optional)
   punish/                indices.bin                           (optional)
   neurons/               ids.bin annotations.json              (optional, provenance)
@@ -49,6 +50,7 @@ annotations; they differ in the encoders and the output layout.
 | `retina` | `params` and `tables` of the frame encoder (below) |
 | `audition` | `params` and `tables` of the sound encoder, or `null` |
 | `detection` | `params` and `tables` of the detected-object encoder, or `null` (below) |
+| `olfaction` | `params` and `tables` of the odour encoder, or `null` (below) |
 | `layout` | which controls the action vector holds (below) |
 | `features.n`, `actions.n` | feature and action vector lengths |
 | `policy` | `params` and `tables` of the policy, or `null` (then only `observe` is possible) |
@@ -68,6 +70,7 @@ annotations; they differ in the encoders and the output layout.
 | `include_frame`, `frame_grid` | append a `rows x cols` luminance grid of the frame to the features |
 | `include_audio` | append the audio band levels to the features |
 | `include_detections` | append the detection grids to the features |
+| `include_odours` | append the odour channel values to the features |
 | `plasticity`, `plasticity_lr`, `dopamine_punish` | optional online learning; a consumer may ignore them |
 
 ### brain
@@ -139,9 +142,19 @@ grids are flattened class-major, then row, then column, into a vector `g` of len
 `matrix_indices`, `matrix_values`, shape `n_neurons x len(g)`), on the `targets`. An artifact
 without `detection` ignores detections.
 
+### olfaction
+
+`params`: `channels` (names, in order), `gain`, `adapt`. The consumer sends, per step, a
+vector `o` with one value in [0, 1] per channel (or a JSON object of channel name to
+value; channels not mentioned keep their last value; no `odours` at all keeps them all).
+`drive = gain * max(matrix @ o, 0)` (CSR `matrix_indptr`, `matrix_indices`,
+`matrix_values`, shape `n_neurons x n_channels`) on the `targets`. With `adapt > 0` a
+trace `a` follows `o` (`a += 0.1 * (o - a)` per step) and the drive uses
+`clip(o - adapt * a, 0, 1)` instead of `o`. Values start at 0 after a reset.
+
 ### features
 
-`[rate[readout[i]] * readout_scale for i] ++ (luminance grid if include_frame) ++ (bands if include_audio) ++ (detection grids if include_detections)`
+`[rate[readout[i]] * readout_scale for i] ++ (luminance grid if include_frame) ++ (bands if include_audio) ++ (detection grids if include_detections) ++ (odour channels if include_odours)`
 
 ### layout
 
@@ -202,9 +215,9 @@ WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
 
 | Request | Response |
 |---|---|
-| `{"op": "info"}` | name, `n_neurons`, `n_features`, `n_actions`, `controls`, `layout`, `brain_ms`, `has_policy`, `has_audition`, `sample_rate`, `retina_grid`, `detection_classes` (or null) |
+| `{"op": "info"}` | name, `n_neurons`, `n_features`, `n_actions`, `controls`, `layout`, `brain_ms`, `has_policy`, `has_audition`, `sample_rate`, `retina_grid`, `detection_classes` (or null), `odour_channels` (or null) |
 | `{"op": "reset"}` | `{"ok": true}` |
-| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool, "detections"?: [{"class": id or name, "box": [x0, y0, x1, y1], "score"?: s}, ...]}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
+| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool, "detections"?: [{"class": id or name, "box": [x0, y0, x1, y1], "score"?: s}, ...], "odours"?: [v, ...] or {"channel": v}}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
 | `{"op": "observe", ...the step fields...}` | `{"ok": true, "t", "spikes", "features"}`: the feature vector, no policy involved |
 | `{"op": "set_policy", "type": "linear", "W": [[...]], "b": [...]}` | installs a linear policy (`W` is `actions x features`); `{"ok": true, "type": "linear"}` |
 | `{"op": "set_policy", "type": "mlp", "layers": [{"W", "b"}, ...], "activation"?, "obs_mean"?, "obs_var"?, "obs_clip"?, "obs_eps"?}` | installs an MLP policy |
@@ -237,7 +250,8 @@ service defined in `core/src/neurofly_core/rpc/neurofly.proto`: `Info`, `Reset`,
 (body artifacts), `SetPolicy`, `Save`, `Stimulate`, `Silence`, `Probe`, `Clear`, `Select`,
 `Activity` and `Positions`. `StepRequest.detections` carries detected objects
 (`Detection`: `class_id`, `x0`, `y0`, `x1`, `y1`, `score`) and `Info.detection_classes`
-the classes an artifact expects.
+the classes an artifact expects; `StepRequest.odours` carries the odour channel values
+(empty keeps the last) and `Info.odour_channels` their names.
 `Info.kind` says which kind is loaded; `Info.n_obs` and `Info.obs_json` describe a body
 artifact's observation vector. Frames and audio are `bytes` (no
 base64); a linear policy is one `Layer` with `w` row-major. Generate a client for any

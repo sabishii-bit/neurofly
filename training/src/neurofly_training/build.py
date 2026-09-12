@@ -14,6 +14,7 @@ from neurofly_core.controls import ControlLayout
 from neurofly_core.brain.lif import LIFBrain
 from neurofly_core.encode.audition import AuditionEncoder
 from neurofly_core.encode.detection import DetectionEncoder
+from neurofly_core.encode.olfaction import OlfactionEncoder
 from neurofly_core.encode.vision import RetinaEncoder, hex_to_unit_square
 from neurofly_core.model import Model, ModelConfig
 from neurofly_training.data.connectome import Connectome
@@ -114,6 +115,29 @@ def build_detection(pops: Populations, n_neurons: int, classes, *, grid=(6, 8),
                             gain=gain, device=device)
 
 
+def build_olfaction(pops: Populations, n_neurons: int, channels, *, gain: float = 15.0,
+                    adapt: float = 0.0, device: str = "cpu") -> OlfactionEncoder:
+    """Each odour channel onto the receptor neurons of one glomerulus, in the antennal
+    lobe's own order (channel i -> the i-th glomerulus by name; more channels than
+    glomeruli wrap around and share)."""
+    if not pops.glomeruli:
+        raise ValueError("no olfactory receptor neurons in this connectome subset "
+                         "(needs the head: subsets central, visual or brain)")
+    names = list(pops.glomeruli)
+    r_, c_ = [], []
+    for j, _ in enumerate(channels):
+        for nrn in pops.glomeruli[names[j % len(names)]]:
+            r_.append(int(nrn))
+            c_.append(j)
+    M = sp.csr_matrix((np.ones(len(r_), np.float32), (r_, c_)),
+                      shape=(n_neurons, len(channels)))
+    M.sum_duplicates()
+    M.sort_indices()
+    targets = np.unique(np.asarray(r_, dtype=np.int64))
+    return OlfactionEncoder(n_neurons, channels=list(channels), matrix=M, targets=targets,
+                            gain=gain, adapt=adapt, device=device)
+
+
 def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", dt: float = 0.5,
                 brain_ms: float = 10.0, brain_gain: float = 1.0, warmup_ms: float = 20.0,
                 retina_mode: str = "auto", retina_gain: float = 15.0,
@@ -121,7 +145,9 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
                 sample_rate: int = 16000, audio_bands: int = 16, audio_gain: float = 15.0,
                 include_frame: bool = False, frame_grid=(12, 16), include_audio: bool = False,
                 detect_classes=None, detection_grid=(6, 8), detection_gain: float = 15.0,
-                include_detections: bool = False,
+                include_detections: bool = False, odour_channels=None,
+                odour_gain: float = 15.0, odour_adapt: float = 0.0,
+                include_odours: bool = False,
                 plasticity: bool = False, dopamine_punish: float = 0.0, policy=None,
                 name: str | None = None, meta: dict | None = None, device: str = "cpu",
                 backend: str = "auto") -> Model:
@@ -138,18 +164,23 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
     if detect_classes:
         detection = build_detection(pops, cx.n, list(detect_classes), grid=detection_grid,
                                     gain=detection_gain, device=device)
+    olfaction = None
+    if odour_channels:
+        olfaction = build_olfaction(pops, cx.n, list(odour_channels), gain=odour_gain,
+                                    adapt=odour_adapt, device=device)
     readout_idx = pops.readout(readout) if isinstance(readout, str) else np.asarray(readout)
     punish = pops.ppl1 if len(pops.ppl1) else pops.dopamine
     config = ModelConfig(dt=dt, brain_ms=brain_ms, warmup_ms=warmup_ms,
                          include_frame=include_frame, frame_grid=tuple(frame_grid),
                          include_audio=include_audio, include_detections=include_detections,
-                         plasticity=plasticity,
+                         include_odours=include_odours, plasticity=plasticity,
                          dopamine_punish=dopamine_punish, name=name or cx.name,
                          meta=dict(meta or {}, connectome=cx.name, n_neurons=cx.n,
                                    readout=readout if isinstance(readout, str) else "custom"))
     positions, known = cx.positions()
     return Model(brain, readout_idx=readout_idx, layout=layout, retina=retina,
-                 audition=audition, detection=detection, policy=policy, config=config,
+                 audition=audition, detection=detection, olfaction=olfaction, policy=policy,
+                 config=config,
                  punish_idx=punish,
                  neuron_ids=cx.neurons["bodyId"].values,
                  neuron_types=cx.neurons["type"].values,

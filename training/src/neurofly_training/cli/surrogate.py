@@ -27,6 +27,7 @@ from neurofly_training.surrogate import train_surrogate
 
 LAYOUT_ARGS = ("task", "keys", "buttons", "mouse", "scroll", "mouse_speed", "pad_buttons", "axes",
                "reward", "dry_run", "fps", "window", "region", "monitor", "max_steps")
+# --reward is kept on args for the odour source; it plays no part in the fit
 
 
 def load_frames(rec: str, with_audio: bool, max_frames: int | None):
@@ -115,9 +116,17 @@ def main():
     print(f"training through the brain on {len(frames)} frames, {args.epochs} epochs ...")
     t0 = time.time()
     torch_seed(args.seed)
+    smells = None
+    if model.olfaction is not None:
+        from neurofly_training.envs import odour_source
+        from neurofly_training.pc.task import load_task
+        smell = odour_source(model, load_task(args.reward))
+        if smell is not None:
+            smells = [smell(f, c, {"t": t}, dets[t] if dets else None)
+                      for t, (f, c) in enumerate(zip(frames, chunks))]
     history = train_surrogate(model, frames, chunks, actions, epochs=args.epochs, lr=args.lr,
                               window=args.bptt_window, l2=args.l2, device=args.device,
-                              verbose=True, detections=dets)
+                              verbose=True, detections=dets, odours=smells)
     print(f"done in {time.time() - t0:.0f} s; "
           f"loss {history['loss'][0]:.4f} -> {history['loss'][-1]:.4f}")
 

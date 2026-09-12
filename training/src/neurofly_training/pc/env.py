@@ -47,10 +47,12 @@ class PCEnv(gym.Env):
 
     def __init__(self, model: Model, *, video: VideoSource, controls: Controls | None = None,
                  audio: AudioSource | None = None, task: Task | None = None, fps: float = 10.0,
-                 realtime: bool | None = None, max_steps: int | None = None, detector=None):
+                 realtime: bool | None = None, max_steps: int | None = None, detector=None,
+                 odours=None):
         self.model = model
         self.video, self.audio = video, audio
         self.detector = detector
+        self.odours = odours      # (frame, chunk, info, detections) -> odours, or None
         self.controls = controls if controls is not None else NullControls()
         self.task = task if task is not None else NoTask()
         self.fps = float(fps)
@@ -112,7 +114,18 @@ class PCEnv(gym.Env):
             self.detector.reset()
         if self.clock is not None:
             self.clock.reset()
-        return self.model.observe(self._frame, self._chunk, detections=self._detect()), {}
+        dets = self._detect()
+        info = {"t": 0}
+        return self.model.observe(self._frame, self._chunk, detections=dets,
+                                  odours=self._smell(info, dets)), {}
+
+    def _smell(self, info, dets):
+        if self.odours is None:
+            return None
+        o = self.odours(self._frame, self._chunk, info, dets)
+        if o is not None:
+            info["odours"] = o
+        return o
 
     def _detect(self):
         self._dets = self.detector.detect(self._frame) if self.detector is not None else None
@@ -131,7 +144,8 @@ class PCEnv(gym.Env):
         reward = float(self.task.reward(self._frame, self._chunk, state, info))
         terminated = bool(self.task.done(self._frame, self._chunk, info))
         truncated = (not more) or (self.max_steps is not None and self.t >= self.max_steps)
-        obs = self.model.observe(self._frame, self._chunk, reward=reward, detections=self._dets)
+        obs = self.model.observe(self._frame, self._chunk, reward=reward, detections=self._dets,
+                                 odours=self._smell(info, self._dets))
         info["brain_spikes"] = self.model.last_spikes
         if terminated or truncated:
             self.controls.release_all()

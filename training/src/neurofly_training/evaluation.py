@@ -39,6 +39,8 @@ def run_recording(model, recording: str, *, task=None, max_frames: int | None = 
         from neurofly_training.pc.detect import cached
         detector = cached(detector, os.path.abspath(video_path))
         detector.reset()
+    from neurofly_training.envs import odour_source
+    smell = odour_source(model, task)
     fps = video.fps or float(meta.get("fps", 10.0))
     audio = None
     if model.audition is not None:
@@ -51,13 +53,14 @@ def run_recording(model, recording: str, *, task=None, max_frames: int | None = 
     try:
         while frame is not None and (max_frames is None or t < max_frames):
             dets = detector.detect(frame) if detector is not None else None
-            f = model.observe(frame, chunk, detections=dets)
+            info = {"t": t}
+            f = model.observe(frame, chunk, detections=dets,
+                              odours=smell(frame, chunk, info, dets) if smell else None)
             feats.append(f)
             if model.policy is not None:
                 a = model.act(f)
                 acts.append(a)
                 if task is not None:
-                    info = {"t": t}
                     rewards.append(float(task.reward(frame, chunk, model.layout.decode(a), info)))
             t += 1
             if progress and t % 100 == 0:
