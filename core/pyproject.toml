@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurofly-core"
+version = "0.1.0"
+description = "Runtime for a trained fly-brain controller: loads an artifact, takes frames and sound, returns keyboard and mouse controls. No training code."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "torch",
+    "numba",      # compiled event-driven spike propagation on CPU
+    "pillow",
+]
+
+[project.optional-dependencies]
+# talking to the real PC: screen capture, sound capture, keyboard and mouse
+pc = ["mss", "pynput", "sounddevice", "soundfile", "soundcard"]
+# the WebSocket flavour of the server (stdio needs nothing)
+ws = ["websockets"]
+# the gRPC flavour of the server
+grpc = ["grpcio"]
+# a virtual Xbox controller (Windows, ViGEmBus driver)
+gamepad = ["vgamepad"]
+
+[project.scripts]
+neurofly-core = "neurofly_core.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["neurofly_core*"]

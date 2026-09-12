@@ -1,138 +1,84 @@
-# flybrain-body
+# neurofly
 
-The fruit fly's brain and body in one loop, on your own machine:
+A fruit fly connectome run as a spiking network and wired to a world. Train it in Python,
+export the result as a plain artifact, run that artifact from Python, Node, Rust, or
+anything that can start a process.
 
-* **Brain**: the MaleCNS v1.0 connectome (Janelia + Google, September 2026; 165,122 traced
-  neurons, 25.6 M edges, brain **and** nerve cord) run as a leaky integrate-and-fire spiking
-  network with the parameters of Shiu et al., Nature 2024. This is the same setup the
-  "fly brain plays Doom / Minecraft / Beat Saber" projects use.
-* **Body**: [flybody](https://github.com/TuragaLab/flybody), the MuJoCo fruit fly from
-  Google DeepMind and Janelia, instead of a game.
-* **Interface**: each of the six legs is wired to its own real neurons. Joint angles and
-  ground contact drive that leg's proprioceptive and tactile sensory neurons in the nerve
-  cord; that leg's motor neurons (plus descending neurons) are read out to its actuators.
-* **Training tools**: PPO (Stable-Baselines3) on top of the brain readout, evolution
-  strategies over the neuron-to-actuator map, and a dopamine-gated plasticity rule that turns
-  reward into synaptic change. Plus a body-only baseline so you can tell what the brain adds.
-
-Everything runs on Windows on CPU. A GPU makes the full brain practical.
+* **Brain**: the MaleCNS v1.0 connectome (165,122 traced neurons, 25.6 M synapses, brain and
+  nerve cord) as a leaky integrate-and-fire network with the parameters of Shiu et al.,
+  Nature 2024. Event-driven propagation steps the central brain in about a millisecond on CPU.
+* **Worlds**: the PC (screen and sound in through the retina and the auditory neurons;
+  keyboard and mouse out of the descending neurons), and the `flybody` MuJoCo fruit fly
+  (joints and contacts in, 59 actuators out).
+* **Training**: PPO, evolution strategies over a neuron-to-control table, imitation of your
+  own recorded use of the PC, surrogate-gradient training through the spiking dynamics, and
+  dopamine-gated plasticity. A `Task` you write supplies reward and episode structure;
+  `neurofly eval` scores any artifact against recordings.
+* **Experiments**: stimulate, silence and probe any neurons by connectome type while the
+  brain runs, from the command line or the API; replay videos with the spike raster beside
+  the frames; a gain calibration sweep; a small `toy` brain with a designed path for tests.
+* **Learning from footage**: an inverse dynamics model labels video that has no input log;
+  corrections while the fly plays become new labels (DAgger); template matching and OCR
+  helpers turn what is on screen into reward.
+* **Safety**: a focus guard stops the fly when the keyboard focus leaves its window, and a
+  watchdog releases every key if the loop stalls.
+* **The body elsewhere**: body runs export as artifacts too (observation in, 59 actuators
+  out, served over JSON or gRPC); `neurofly export-body` writes the fly as a glTF and, with
+  `--mjcf`, the complete MuJoCo model for any MuJoCo build; `watch --poses` or `--pose-ws`
+  feed `examples/three_viewer.html`, recorded or live.
+* **Deployment**: `neurofly export` writes an artifact (a manifest plus flat binary arrays,
+  no Python objects); `neurofly-core` loads it and either drives the PC itself (keyboard,
+  mouse, a virtual gamepad) or serves a JSON-lines or gRPC protocol that the Node, Rust and
+  Go bindings speak.
 
 ## Layout
 
 ```
-flybrain_body/
-  data/connectome.py     load MaleCNS -> signed sparse matrix; subsets; synthetic test brain
-  data/download.py       fetch the 3 public files (about 570 MB)
-  brain/lif.py           LIF network on a torch sparse matrix
-  brain/plasticity.py    dopamine-gated Hebbian rule on a synapse subset
-  body/tasks.py          flybody tasks: 'forward' (free walking), 'ball' (tethered)
-  body/gym_wrapper.py    dm_control -> Gymnasium
-  interface/populations.py  leg motor / sensory / descending neuron groups
-  interface/encoder.py   body observation -> sensory neuron drive
-  interface/decoder.py   readout rates -> 59 actuators (structured linear map)
-  envs.py                BrainInLoopEnv and make_env()
-scripts/
-  download_data.py  inspect_connectome.py  bench_brain.py  train.py  train_es.py  watch.py
-tests/
+core/            neurofly-core: the runtime. Brain, encoders, decoders, artifact loading,
+                 PC input/output, the server, the `neurofly-core` command. No training code.
+training/        neurofly-training: connectome loading, body and PC environments, PPO / ES /
+                 imitation, recording, export, the `neurofly` command. Depends on core.
+artifact/        SPEC.md: the artifact format and the server protocol, for other languages.
+bindings/        node/, rust/ and go/ packages that spawn the runtime; python/ points at core.
+examples/        a Task to copy, and a Node program that consumes an artifact.
+docs/            how to use and extend everything.
+tests/           pytest suite: tests/core and tests/training.
+data/            inputs you download or record (git-ignored): malecns/, recordings/
+runs/            raw training outputs (git-ignored)
+artifacts/       exported controllers, what you ship (git-ignored by default)
 ```
 
-## Setup
-
-The project shares the virtual environment of the flybody checkout next door
-(`..\flybody\.venv`, Python 3.10.11 from pyenv). It is already installed there.
+## Quick start
 
 ```powershell
-cd W:\Repositories\flybrain-body
-..\flybody\.venv\Scripts\Activate.ps1
-python scripts/download_data.py        # once; files already present are skipped
-python -m pytest -q                    # about 3 minutes; real-data test included when data exists
+pip install -e core[pc] -e training[dev]        # plus flybody for body tasks: training[flybody]
+neurofly download                                # the connectome files (about 570 MB)
+python -m pytest -q                              # about 25 s
+
+neurofly play  --window "My App" --keys w,a,s,d --mouse --brain malecns --dry-run   # prints what it would press
+neurofly record  --window "My App" --keys w,a,s,d --mouse --audio loopback --out data/recordings/run1
+neurofly imitate data/recordings/run1 --run-name imitate_myapp
+neurofly export  runs/imitate_myapp artifacts/myapp
+neurofly-core run artifacts/myapp --window "My App"       # the brain uses the PC
+neurofly-core serve artifacts/myapp                       # ... or serves any language
 ```
 
-On a fresh machine: `pip install -e .[flybody,dev]` (pulls flybody from GitHub) then the same.
-
-## Look at the brain
-
-```powershell
-python scripts/inspect_connectome.py --subset vnc
-python scripts/bench_brain.py --subset vnc --dt 0.5
-python scripts/bench_brain.py --subset full --dt 0.5 --device cuda   # needs a CUDA torch build
+```js
+const { NeuroFly } = require("neurofly");                 // bindings/node
+const fly = new NeuroFly("artifacts/myapp"); await fly.start();
+const r = await fly.step({ frame, width: 320, height: 240 });   // r.keys, r.dx, r.dy, ...
 ```
 
-Subsets: `full` (165k neurons), `no-optic` (drops the ~95k optic lobe neurons), `vnc`
-(nerve cord plus descending, ascending and leg sensory neurons; about 23k neurons). `vnc`
-is the default for training because it is where walking lives and it steps in a few ms.
-
-## Train
-
-Body-only baseline, an MLP on proprioception:
-
-```powershell
-python scripts/train.py --task forward --brain none --timesteps 2000000 --n-envs 8
-```
-
-Brain in the loop. The policy sees firing rates of leg motor and descending neurons, which
-in turn are driven by the body's sensors through the real wiring:
-
-```powershell
-python scripts/train.py --task forward --brain malecns --subset vnc --n-envs 4 --timesteps 500000
-python scripts/train.py --task forward --brain malecns --plasticity     # reward = dopamine
-python scripts/train.py --task ball --brain malecns --include-proprio   # rates + raw sensors
-```
-
-Evolution strategies over the linear neuron-to-actuator decoder (no policy network, the
-"fixed interface" of the game demos, but learned):
-
-```powershell
-python scripts/train_es.py --task forward --brain malecns --subset vnc --workers 8 --generations 200
-```
-
-Runs land in `runs/<name>/` with `config.json`, model or decoder weights, and TensorBoard logs
-for PPO (`tensorboard --logdir runs`). The number to watch is `rollout/ep_rew_mean`; per-step
-reward is in [0, 1], a 2-second episode is 1000 steps.
-
-## Watch
-
-```powershell
-python scripts/watch.py runs/<name> --episodes 2 --video videos/<name>.mp4
-python scripts/watch.py --task forward --policy random --video videos/random.mp4
-python scripts/watch.py --task forward --brain malecns --policy zero      # counts brain spikes
-```
-
-## Speed
-
-| setting                      | control steps / s (one process, CPU) |
-|------------------------------|--------------------------------------|
-| body only                    | about 200                            |
-| body + `vnc` brain, dt 0.5   | tens                                 |
-| body + `full` brain, dt 0.5  | a few (use `--device cuda`)          |
-
-The body's control step is 2 ms; the brain takes `2 / dt` sub-steps per control step. Shiu
-et al. used dt = 0.1 ms; 0.5 ms is fine for closed loop and 5x faster. `bench_brain.py`
-prints the real numbers for your machine.
+Full documentation: [docs/](docs/README.md). The runtime alone: [core/](core/README.md).
 
 ## What is real and what is engineered
 
-Real: the neurons, their synapse counts, their transmitter signs, and which leg each motor
-and sensory neuron belongs to. Engineered by you: the LIF parameters (uniform across
-neurons), how sensor values become sensory drive (`encoder.py`, a fixed random sparse
-projection), and how motor neuron rates become joint targets (the decoder, or the PPO
-policy). Those two maps are exactly the parts the Doom and Minecraft demos hand-pick, and
-here they are the parts you train. Do not read a walking fly as "the connectome knows how
-to walk"; read it as "a policy learned to walk through the connectome's dynamics".
-
-## Where to go next
-
-1. **Calibrate the brain.** `bench_brain.py` shows how many neurons are active; tune
-   `--brain-gain` and `--encoder-gain` until leg sensory input produces sparse, not
-   runaway, activity in the nerve cord.
-2. **Use the real gait.** flybody ships a walking-imitation task and a dataset of real fly
-   walking (`flybody.download_data.figshare_download('walking-imitation-dataset')`). Reward
-   matching those trajectories to get natural gaits instead of whatever PPO invents.
-3. **Make the decoder anatomical.** Motor neuron types in the annotation table say what
-   muscle they drive (`Ti flexor MN`, `Fe reductor MN`, `Ta depressor MN`, ...). Map them to
-   the matching flybody joints instead of a random initialisation.
-4. **Query neuPrint live.** `neuprint-python` is installed; dataset `male-cns:v1.0` at
-   neuprint.janelia.org gives synapse locations, ROIs and more (needs a free token).
+Real: the neurons, their synapse counts, their transmitter signs, which leg each motor and
+sensory neuron serves, which eye and column each optic-lobe neuron belongs to, which head
+neurons are auditory. Engineered: the LIF parameters (uniform across neurons), the encoders
+(sensors, pixels and sound onto neurons), and the map from readout rates to actions. Those
+maps are the parts you train. Read a fly that uses the PC as "a policy learned to do it
+through the connectome's dynamics", not as "the connectome knows how".
 
 ## Data and citations
 
@@ -141,4 +87,4 @@ to walk"; read it as "a policy learned to walk through the connectome's dynamics
 * LIF model: Shiu et al., "A leaky integrate-and-fire computational model based on the
   connectome of the entire adult Drosophila brain", Nature 2024.
 * Body: Vaxenburg et al., "Whole-body physics simulation of fruit fly locomotion",
-  Nature 2025.
+  Nature 2025 (the `flybody` package).

@@ -1,0 +1,118 @@
+<!doctype html>
+<!--
+  Shows the exported fly body in Three.js, animated from a pose stream: a poses.json file
+  written by `neurofly watch --poses`, or live over a WebSocket from
+  `neurofly watch --pose-ws 127.0.0.1:8766`.
+
+    neurofly export-body --out assets/fly.glb
+    neurofly watch --task forward --brain malecns --policy zero --poses assets/poses.json
+    python -m http.server 8000        # from the repository root, then open
+    http://localhost:8000/examples/three_viewer.html?glb=../assets/fly.glb&poses=../assets/poses.json
+    http://localhost:8000/examples/three_viewer.html?glb=../assets/fly.glb&ws=ws://127.0.0.1:8766
+
+  The .glb has one node per MuJoCo body under the root; a pose gives each body's world
+  position (cm) and quaternion (w, x, y, z). MuJoCo is z-up, Three.js y-up: the whole fly is
+  parented to a group rotated -90 degrees about x.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>neurofly viewer</title>
+  <style>
+    body { margin: 0; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
+    #hud { position: fixed; left: 12px; top: 10px; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="hud">loading...</div>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const params = new URLSearchParams(location.search);
+    const glbUrl = params.get("glb") || "../assets/fly.glb";
+    const posesUrl = params.get("poses") || "../assets/poses.json";
+    const wsUrl = params.get("ws");
+    const hud = document.getElementById("hud");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 100);
+    camera.position.set(1.2, 0.8, 1.2);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+    sun.position.set(2, 3, 1);
+    scene.add(sun);
+    scene.add(new THREE.GridHelper(4, 40, 0x444444, 0x2a2a2a));
+
+    const zUp = new THREE.Group();            // MuJoCo z-up -> Three.js y-up
+    zUp.rotation.x = -Math.PI / 2;
+    scene.add(zUp);
+
+    const nodes = new Map();
+    const gltf = await new GLTFLoader().loadAsync(glbUrl);
+    zUp.add(gltf.scene);
+    gltf.scene.traverse((o) => { if (o.name) nodes.set(o.name, o); });
+
+    // glTF nodes were exported in world frame under the root, so poses apply directly
+    const q = new THREE.Quaternion();
+    let bodies = [];
+    function applyPose(row) {
+      for (let i = 0; i < bodies.length; i++) {
+        const node = nodes.get(bodies[i]);
+        if (!node) continue;
+        const o = i * 7;
+        node.position.set(row[o], row[o + 1], row[o + 2]);
+        q.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]);   // (x, y, z, w) from (w, x, y, z)
+        node.quaternion.copy(q);
+      }
+    }
+
+    let frames = null, fps = 50, t = 0, last = performance.now();
+    if (wsUrl) {
+      const ws = new WebSocket(wsUrl);
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.bodies) { bodies = msg.bodies; fps = msg.fps; hud.textContent = `live: ${bodies.length} bodies at ${fps} fps from ${wsUrl}`; }
+        else if (msg.pose) applyPose(msg.pose);
+      };
+      ws.onclose = () => { hud.textContent += " (disconnected)"; };
+      ws.onerror = () => { hud.textContent = `could not connect to ${wsUrl}`; };
+    } else {
+      try {
+        const poses = await (await fetch(posesUrl)).json();
+        bodies = poses.bodies; fps = poses.fps; frames = poses.frames;
+        hud.textContent = `${bodies.length} bodies, ${frames.length} frames at ${fps} fps`;
+      } catch (e) { hud.textContent = `loaded ${glbUrl}; no poses (${e.message})`; }
+    }
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    function frame(now) {
+      if (frames && frames.length && now - last >= 1000 / fps) {
+        applyPose(frames[t]);
+        t = (t + 1) % frames.length;
+        last = now;
+      }
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

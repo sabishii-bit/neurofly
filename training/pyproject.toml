@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurofly-training"
+version = "0.1.0"
+description = "Builds and trains fly-brain controllers (connectome loading, body and PC environments, PPO / ES / imitation) and exports them as artifacts for neurofly-core."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "neurofly-core",
+    "numpy==1.26.4",          # pinned by flybody
+    "pandas",
+    "pyarrow",
+    "requests",
+    "tqdm",
+    "gymnasium",
+    "stable-baselines3>=2.3",
+    "tensorboard",
+    "imageio",
+    "imageio-ffmpeg",
+    "neuprint-python",        # optional live queries against neuprint.janelia.org
+]
+
+[project.optional-dependencies]
+# the MuJoCo fly body (not on PyPI); locally an editable checkout next door is used
+flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+neurofly = "neurofly_training.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["neurofly_training*"]

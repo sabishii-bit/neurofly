@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from flybrain_body.data.connectome import Connectome
-from flybrain_body.envs import DEFAULT_DATA_DIR
+from neurofly_training.data.connectome import Connectome
+from neurofly_training.envs import DEFAULT_DATA_DIR
 
 
 @pytest.fixture(scope="session")

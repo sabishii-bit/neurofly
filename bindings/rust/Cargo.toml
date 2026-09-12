@@ -1,0 +1,11 @@
+[package]
+name = "neurofly"
+version = "0.1.0"
+edition = "2021"
+description = "Run a trained neurofly controller from Rust: frames and sound in, keyboard and mouse controls out."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"

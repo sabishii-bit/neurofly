@@ -1,6 +1,6 @@
-data/
-runs/
-videos/
+/data/
+/runs/
+/videos/
 __pycache__/
 *.pyc
 *.egg-info/
@@ -21,3 +21,16 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+
+# exported controllers can be large; force-add the ones you want to ship
+/artifacts/*
+!/artifacts/README.md
+
+# bindings build output
+bindings/rust/target/
+bindings/rust/Cargo.lock
+bindings/node/node_modules/
+bindings/node/dist/
+bindings/node/package-lock.json
+/assets/

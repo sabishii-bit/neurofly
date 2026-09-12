@@ -1,0 +1,119 @@
+// The neurofly runtime as a gRPC service. Same operations as the JSON-lines protocol
+// (artifact/SPEC.md), with frames and audio as bytes and a bidirectional stream for
+// low-latency loops. Generate a client for your language with protoc; the Python
+// server is `neurofly-core serve <artifact> --grpc host:port`.
+syntax = "proto3";
+
+package neurofly;
+
+service NeuroFly {
+  rpc Info(Empty) returns (InfoReply);
+  rpc Reset(Empty) returns (Ack);
+  rpc Step(StepRequest) returns (StepReply);          // PC: controls (or features without a policy)
+  rpc Observe(StepRequest) returns (StepReply);       // PC: features, no policy involved
+  rpc Stream(stream StepRequest) returns (stream StepReply);   // one reply per request, in order
+  rpc BodyStep(BodyRequest) returns (BodyReply);      // body: observation in, actuators out
+  rpc BodyStream(stream BodyRequest) returns (stream BodyReply);
+  rpc SetPolicy(Policy) returns (Ack);
+  rpc Save(SaveRequest) returns (SaveReply);
+  rpc Stimulate(Selection) returns (Count);           // Selection.mv is the drive
+  rpc Silence(Selection) returns (Count);
+  rpc Probe(Selection) returns (Count);               // empty Selection turns the probe off
+  rpc Clear(Empty) returns (Ack);
+  rpc Select(Selection) returns (Indices);
+}
+
+message Empty {}
+message Ack { bool ok = 1; string error = 2; }
+message Count { int32 n = 1; }
+message Indices { repeated int64 indices = 1; }
+
+message InfoReply {
+  string name = 1;
+  int32 n_neurons = 2;
+  int32 n_features = 3;
+  int32 n_actions = 4;
+  repeated string controls = 5;   // PC: control names; body: actuator names
+  double brain_ms = 6;
+  bool has_policy = 7;
+  bool has_audition = 8;
+  int32 sample_rate = 9;          // 0 when there is no audition
+  repeated int32 retina_grid = 10;
+  bool has_annotations = 11;
+  string layout_json = 12;        // the ControlLayout as JSON (PC)
+  string kind = 13;               // "pc" or "body"
+  int32 n_obs = 14;               // body: observation length
+  string obs_json = 15;           // body: {"keys": [...], "slices": {name: [start, stop]}}
+}
+
+message StepRequest {
+  bytes frame = 1;             // raw RGB, row-major, 3 bytes per pixel; or an encoded image
+  int32 width = 2;
+  int32 height = 3;
+  string format = 4;           // "" or "rgb" for raw; "png" / "jpeg" for encoded
+  bytes audio = 5;             // float32 little-endian samples since the last step, interleaved
+  int32 sample_rate = 6;
+  int32 channels = 7;
+  double reward = 8;
+  bool observe_only = 9;
+}
+
+message ProbeReply { repeated int32 spikes = 1; repeated float rates = 2; }
+
+message StepReply {
+  bool ok = 1;
+  string error = 2;
+  int32 t = 3;
+  int32 spikes = 4;
+  repeated float action = 5;
+  repeated string held = 6;
+  repeated string keys = 7;
+  repeated string buttons = 8;
+  double dx = 9;
+  double dy = 10;
+  double scroll = 11;
+  repeated float features = 12;   // Observe, or Step without a policy
+  ProbeReply probe = 13;          // when a probe is set
+  repeated string pad_buttons = 14;
+  map<string, double> axes = 15;
+}
+
+message BodyRequest {
+  repeated float obs = 1;      // the body observation, in the artifact's layout
+  double reward = 2;
+  bool observe_only = 3;
+}
+
+message BodyReply {
+  bool ok = 1;
+  string error = 2;
+  int32 t = 3;
+  int32 spikes = 4;
+  repeated float action = 5;      // actuator commands in [-1, 1]
+  repeated float features = 6;    // observe_only, or without a policy
+  ProbeReply probe = 7;
+}
+
+message Layer { int32 rows = 1; int32 cols = 2; repeated double w = 3; repeated double b = 4; }  // w row-major
+
+message Policy {
+  string type = 1;             // "linear" (one layer) or "mlp"
+  repeated Layer layers = 2;
+  string activation = 3;       // "tanh" or "relu" (mlp)
+  repeated double obs_mean = 4;
+  repeated double obs_var = 5;
+  double obs_clip = 6;
+  double obs_eps = 7;
+}
+
+message SaveRequest { string path = 1; string name = 2; }
+message SaveReply { string path = 1; }
+
+message Selection {
+  repeated int64 indices = 1;
+  repeated int64 ids = 2;
+  string type_re = 3;
+  string superclass = 4;
+  string name = 5;             // readout, retina, audition, punish, sensory
+  double mv = 6;               // Stimulate only
+}
