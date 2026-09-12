@@ -233,6 +233,13 @@ themselves carry `activity` once it is on, and `{"op": "positions"}` (gRPC `Posi
 returns the map. From Python: `model.watch_activity(True)` then `model.last_activity`
 (`indices` and `counts` of the neurons that fired) and `model.activity_map()`.
 
+To draw the brain as a graph rather than a cloud of points, `{"op": "graph", "limit": 20000}`
+returns the synapses themselves as `pre` and `post` indices into the same neurons `positions`
+gives, with their weights. A connectome has far more edges than anything can draw, so what
+comes back is the strongest `limit` of them: a uniform sample of a heavy-tailed weight
+distribution is mostly hairline connections nobody can see, while the strong ones are the
+backbone. The Node client has it as `graph()`.
+
 ## The workbench, the atlas and the replay format
 
 `examples/workbench.html` puts three panels on one timeline: what the fly saw (a video),

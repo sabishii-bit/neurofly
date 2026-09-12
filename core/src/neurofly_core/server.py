@@ -41,7 +41,7 @@ import sys
 
 import numpy as np
 
-from neurofly_core.activity import activity_payload, map_payload
+from neurofly_core.activity import activity_payload, graph_payload, map_payload
 from neurofly_core.decode.linear import ControlDecoder
 from neurofly_core.decode.mlp import MLPPolicy
 from neurofly_core.model import Model
@@ -295,6 +295,8 @@ class Session:
                 return {"ok": True, "n": n}
             if op == "positions":
                 return {"ok": True, **map_payload(m)}
+            if op == "graph":
+                return {"ok": True, **graph_payload(m, int(req.get("limit", 20000)))}
             if op == "clear":
                 m.clear()
                 return {"ok": True}

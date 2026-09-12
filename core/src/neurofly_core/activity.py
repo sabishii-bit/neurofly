@@ -79,6 +79,37 @@ def map_payload(source, fps: float | None = None) -> dict:
     return out
 
 
+def graph_payload(source, limit: int = 20000) -> dict:
+    """A sample of the synapses themselves, for a viewer that draws the brain as a graph
+    rather than as a cloud of points.
+
+    A connectome has far too many edges to send or to draw: the MaleCNS has tens of
+    millions. What survives here is the strongest ``limit`` of them, because a uniform
+    sample of a heavy-tailed weight distribution is mostly hairline connections that
+    nobody can see, while the strong ones are the backbone a reader is looking for.
+    ``pre`` and ``post`` index the same neurons ``positions`` returns, so a viewer can
+    draw a line between two points without looking anything up."""
+    brain = getattr(source, "brain", None)
+    if brain is None or not hasattr(brain, "edges"):
+        return {"n_edges": 0, "sampled": 0, "pre": [], "post": [], "weight": []}
+    pre, post = brain.edges()
+    vals = np.asarray(brain.vals.detach().cpu().numpy() if hasattr(brain.vals, "detach")
+                      else brain.vals, dtype=np.float32)
+    total = int(len(pre))
+    limit = max(0, int(limit))
+    if total > limit and limit > 0:
+        keep = np.argpartition(np.abs(vals), total - limit)[total - limit:]
+        keep.sort()
+    elif limit == 0:
+        keep = np.empty(0, dtype=np.int64)
+    else:
+        keep = np.arange(total)
+    return {"n_edges": total, "sampled": int(len(keep)),
+            "pre": [int(i) for i in np.asarray(pre)[keep]],
+            "post": [int(i) for i in np.asarray(post)[keep]],
+            "weight": [round(float(v), 4) for v in vals[keep]]}
+
+
 class ActivityLog:
     """Every step's activity into one JSON file the viewer can play back."""
 

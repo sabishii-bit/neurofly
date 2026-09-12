@@ -132,6 +132,23 @@ def test_session_ops_and_hooks(model):
     assert calls == [1, 1]                                   # hooks only after a good step
 
 
+def test_graph_op_sends_the_strongest_synapses(model):
+    """A viewer drawing the brain as a graph asks for the synapses, capped, strongest first."""
+    s = Session(model)
+    n = model.brain.n
+    full = s.handle({"op": "graph", "limit": 10_000_000})
+    assert full["ok"] and full["sampled"] == full["n_edges"] == model.brain.n_edges
+    assert len(full["pre"]) == len(full["post"]) == len(full["weight"]) == full["sampled"]
+    assert all(0 <= i < n for i in full["pre"]) and all(0 <= i < n for i in full["post"])
+
+    capped = s.handle({"op": "graph", "limit": 25})
+    assert capped["sampled"] == 25 and capped["n_edges"] == full["n_edges"]
+    # what came back is the heavy end of the distribution, not a uniform sample
+    smallest_kept = min(abs(w) for w in capped["weight"])
+    assert smallest_kept >= np.median(np.abs(full["weight"]))
+    assert s.handle({"op": "graph", "limit": 0})["sampled"] == 0
+
+
 def test_sinks_log_and_broadcast(model, tmp_path):
     pytest.importorskip("websockets")
     from websockets.sync.client import connect

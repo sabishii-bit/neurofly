@@ -101,6 +101,8 @@ export class NeuroFlyWS {
   select(sel: Selection): Promise<{ ok: true; n: number; indices: number[] }> { return this.send({ op: "select", ...sel }); }
   activity(on = true, substeps = false): Promise<{ ok: true; n: number }> { return this.send({ op: "activity", on, substeps }); }
   positions(): Promise<BrainMap> { return this.send({ op: "positions" }); }
+  /** The strongest `limit` synapses, as indices into `positions`, for drawing the brain as a graph. */
+  graph(limit = 20000): Promise<{ ok: true; n_edges: number; sampled: number; pre: number[]; post: number[]; weight: number[] }> { return this.send({ op: "graph", limit }); }
   /** Start writing every later step's frame, sound and action to a recording directory on the server. */
   record(path: string, fps = 10): Promise<{ ok: true; path: string; recording: boolean }> { return this.send({ op: "record", path, fps }); }
   stopRecording(): Promise<{ ok: true; recording: boolean; n_frames: number; path?: string }> { return this.send({ op: "record", off: true }); }
