@@ -46,6 +46,7 @@ message InfoReply {
   string kind = 13;               // "pc" or "body"
   int32 n_obs = 14;               // body: observation length
   string obs_json = 15;           // body: {"keys": [...], "slices": {name: [start, stop]}}
+  repeated string detection_classes = 16;   // PC: the classes a detection encoder expects
 }
 
 message StepRequest {
@@ -58,6 +59,16 @@ message StepRequest {
   int32 channels = 7;
   double reward = 8;
   bool observe_only = 9;
+  repeated Detection detections = 10;   // objects a detector found, for a detection encoder
+}
+
+message Detection {
+  int32 class_id = 1;          // index into Info.detection_classes
+  float x0 = 2;                // box as fractions of the frame, left-top to right-bottom
+  float y0 = 3;
+  float x1 = 4;
+  float y1 = 5;
+  float score = 6;             // 0..1 (1 when unknown)
 }
 
 message ProbeReply { repeated int32 spikes = 1; repeated float rates = 2; }

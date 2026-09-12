@@ -13,6 +13,7 @@ import scipy.sparse as sp
 from neurofly_core.controls import ControlLayout
 from neurofly_core.brain.lif import LIFBrain
 from neurofly_core.encode.audition import AuditionEncoder
+from neurofly_core.encode.detection import DetectionEncoder
 from neurofly_core.encode.vision import RetinaEncoder, hex_to_unit_square
 from neurofly_core.model import Model, ModelConfig
 from neurofly_training.data.connectome import Connectome
@@ -96,12 +97,31 @@ def build_audition(pops: Populations, n_neurons: int, *, sample_rate: int = 1600
                            device=device)
 
 
+def build_detection(pops: Populations, n_neurons: int, classes, *, grid=(6, 8),
+                    gain: float = 15.0, inputs_per_neuron: int = 1, seed: int = ENCODER_SEED,
+                    device: str = "cpu") -> DetectionEncoder:
+    """Detected objects onto the central-brain interneurons (or the visual projection
+    neurons without a central brain): each target neuron is tuned to one class at one
+    place, a labelled line, so the readout can tell what is where."""
+    targets = pops.cb_intrinsic if len(pops.cb_intrinsic) else pops.visual_projection
+    if len(targets) == 0:
+        raise ValueError("no central-brain or visual projection neurons for detections "
+                         "(needs the head: subsets central, visual or brain)")
+    n_in = len(classes) * int(grid[0]) * int(grid[1])
+    M = _random_projection(np.random.default_rng(seed + 2), n_neurons, targets, n_in,
+                           inputs_per_neuron)
+    return DetectionEncoder(n_neurons, classes=classes, matrix=M, targets=targets, grid=grid,
+                            gain=gain, device=device)
+
+
 def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", dt: float = 0.5,
                 brain_ms: float = 10.0, brain_gain: float = 1.0, warmup_ms: float = 20.0,
                 retina_mode: str = "auto", retina_gain: float = 15.0,
                 retina_temporal: float = 0.0, retina_grid=(24, 32), audio: bool = False,
                 sample_rate: int = 16000, audio_bands: int = 16, audio_gain: float = 15.0,
                 include_frame: bool = False, frame_grid=(12, 16), include_audio: bool = False,
+                detect_classes=None, detection_grid=(6, 8), detection_gain: float = 15.0,
+                include_detections: bool = False,
                 plasticity: bool = False, dopamine_punish: float = 0.0, policy=None,
                 name: str | None = None, meta: dict | None = None, device: str = "cpu",
                 backend: str = "auto") -> Model:
@@ -114,17 +134,23 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
     if audio:
         audition = build_audition(pops, cx.n, sample_rate=sample_rate, n_bands=audio_bands,
                                   gain=audio_gain, device=device)
+    detection = None
+    if detect_classes:
+        detection = build_detection(pops, cx.n, list(detect_classes), grid=detection_grid,
+                                    gain=detection_gain, device=device)
     readout_idx = pops.readout(readout) if isinstance(readout, str) else np.asarray(readout)
     punish = pops.ppl1 if len(pops.ppl1) else pops.dopamine
     config = ModelConfig(dt=dt, brain_ms=brain_ms, warmup_ms=warmup_ms,
                          include_frame=include_frame, frame_grid=tuple(frame_grid),
-                         include_audio=include_audio, plasticity=plasticity,
+                         include_audio=include_audio, include_detections=include_detections,
+                         plasticity=plasticity,
                          dopamine_punish=dopamine_punish, name=name or cx.name,
                          meta=dict(meta or {}, connectome=cx.name, n_neurons=cx.n,
                                    readout=readout if isinstance(readout, str) else "custom"))
     positions, known = cx.positions()
     return Model(brain, readout_idx=readout_idx, layout=layout, retina=retina,
-                 audition=audition, policy=policy, config=config, punish_idx=punish,
+                 audition=audition, detection=detection, policy=policy, config=config,
+                 punish_idx=punish,
                  neuron_ids=cx.neurons["bodyId"].values,
                  neuron_types=cx.neurons["type"].values,
                  neuron_superclass=cx.neurons["superclass"].values,

@@ -41,6 +41,7 @@ PC_ARGS = ["fps", "window", "region", "monitor", "audio", "keys", "buttons", "mo
            "mouse_speed", "scroll", "pad_buttons", "axes", "reward", "max_steps", "dry_run",
            "brain_ms", "retina_mode",
            "retina_gain", "retina_temporal", "audio_gain", "include_frame", "include_audio",
+           "detect", "detection_grid", "detection_gain", "include_detections",
            "dopamine_punish"]
 ENV_ARGS = BODY_ARGS + PC_ARGS
 
@@ -98,6 +99,14 @@ def make_layout(keys=None, buttons=None, mouse: bool = False, scroll: bool = Fal
                          pad_buttons=parse_names(pad_buttons), axes=parse_names(axes))
 
 
+def parse_grid(grid, default=(6, 8)) -> tuple[int, int]:
+    if grid is None or grid == "":
+        return tuple(default)
+    if isinstance(grid, str):
+        grid = grid.split(",")
+    return int(grid[0]), int(grid[1])
+
+
 def wants_audio(audio) -> bool:
     return audio is not None and str(audio).lower() != "none"
 
@@ -112,6 +121,8 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                   retina_gain: float = 15.0, retina_temporal: float = 0.0,
                   audio_gain: float = 15.0, include_frame: bool = False,
                   include_audio: bool = False, dopamine_punish: float = 0.0,
+                  detect=None, detection_grid=(6, 8), detection_gain: float = 15.0,
+                  include_detections: bool = False,
                   sample_rate: int = 16000, name: str | None = None, policy=None,
                   **_ignored):
     """The ``neurofly_core.Model`` a PC task uses, without any sources. This is what
@@ -123,22 +134,27 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
     layout = layout or make_layout(keys, buttons, mouse, scroll, mouse_speed, pad_buttons, axes)
     cx = load_connectome(brain, subset=subset or default_subset(task), data_dir=data_dir,
                          synthetic_n=synthetic_n)
+    from neurofly_training.pc.detect import classes_for
+    classes = list(detect) if isinstance(detect, (list, tuple)) else classes_for(detect)
     return build_model(cx, layout, readout=readout or default_readout(task), dt=dt,
                        brain_ms=brain_ms, brain_gain=brain_gain, retina_mode=retina_mode,
                        retina_gain=retina_gain, retina_temporal=retina_temporal,
                        audio=wants_audio(audio), sample_rate=sample_rate,
                        audio_gain=audio_gain, include_frame=include_frame,
                        include_audio=include_audio, plasticity=plasticity,
+                       detect_classes=classes, detection_grid=parse_grid(detection_grid),
+                       detection_gain=detection_gain, include_detections=include_detections,
                        dopamine_punish=dopamine_punish, policy=policy, name=name,
-                       meta={"brain": brain, "subset": subset or default_subset(task)},
+                       meta={"brain": brain, "subset": subset or default_subset(task),
+                             "detect": detect if isinstance(detect, str) else None},
                        device=device)
 
 
 def make_pc_env(task: str = "pc", seed: int = 0, fps: float = 10.0, window: str | None = None,
                 region=None, monitor: int = 1, audio=None, reward: str | None = None,
                 max_steps: int | None = None, dry_run: bool = False, video_source=None,
-                audio_source=None, controls=None, task_obj=None, model=None,
-                **model_kwargs) -> PCEnv:
+                audio_source=None, controls=None, task_obj=None, model=None, detector=None,
+                detect=None, device: str = "cpu", **model_kwargs) -> PCEnv:
     """The live screen (``task='pc'``) or a video file, with the brain in the loop.
 
     Pass ``video_source`` / ``audio_source`` / ``controls`` / ``task_obj`` / ``model``
@@ -163,7 +179,23 @@ def make_pc_env(task: str = "pc", seed: int = 0, fps: float = 10.0, window: str 
         sample_rate = audio_source.sample_rate
     if model is None:
         model = make_pc_model(task, audio=audio if audio_source is None else "yes",
-                              sample_rate=sample_rate, **model_kwargs)
+                              sample_rate=sample_rate, detect=detect, device=device,
+                              **model_kwargs)
+    if detector is None and model.detection is not None:
+        from neurofly_training.pc.detect import cached, make_detector
+        if detect:
+            detector = make_detector(detect, device=device)
+        elif model.config.meta.get("detect"):
+            detector = make_detector(model.config.meta["detect"], device=device)
+        else:
+            raise ValueError("the model has a detection encoder; pass detect= (a detector "
+                             "spec) or detector= (a Detector) so it gets detections")
+        if not video_source.live:
+            detector = cached(detector, os.path.abspath(task))
+    if detector is not None and list(detector.classes) != list(model.detection.classes
+                                                                 if model.detection else []):
+        raise ValueError(f"the detector's classes {detector.classes} differ from the model's "
+                         f"{model.detection.classes if model.detection else []}")
     if controls is None:
         if not video_source.live:
             controls = NullControls()
@@ -171,7 +203,7 @@ def make_pc_env(task: str = "pc", seed: int = 0, fps: float = 10.0, window: str 
             controls = make_controls("log" if dry_run else "pc", model.layout)
     task_obj = task_obj if task_obj is not None else load_task(reward)
     return PCEnv(model, video=video_source, audio=audio_source, controls=controls, task=task_obj,
-                 fps=fps, max_steps=max_steps)
+                 fps=fps, max_steps=max_steps, detector=detector)
 
 
 def make_env(task: str = "forward", seed: int = 0, brain: str = "none", subset: str | None = None,
@@ -269,4 +301,13 @@ def add_env_args(p, *, brain_default: str = "none",
                    help="also give the policy the audio band levels")
     g.add_argument("--dopamine-punish", type=float, default=0.0,
                    help="mV of drive on PPL1 dopamine neurons while reward is negative")
+    g.add_argument("--detect", default=None, metavar="SPEC",
+                   help="an object detector feeding a detection encoder: 'owl2:enemy,health "
+                        "pack' (open vocabulary, no training), a directory from `neurofly "
+                        "detect-train`, 'onnx:DIR' or 'yolo:weights.pt'")
+    g.add_argument("--detection-grid", default="6,8", help="cells per class: rows,cols")
+    g.add_argument("--detection-gain", type=float, default=15.0,
+                   help="drive at full coverage of a cell, mV")
+    g.add_argument("--include-detections", action="store_true",
+                   help="also give the policy the detection grids")
     return p

@@ -51,6 +51,7 @@ class Populations:
         self.all_leg_motor = np.unique(np.concatenate(list(self.leg_motor.values())))
         # game side
         self.cb_motor = cx.select(superclass="cb_motor")
+        self.cb_intrinsic = cx.select(superclass="cb_intrinsic")
         self.visual_projection = cx.select(superclass="visual_projection")
         self.photoreceptors = cx.select(superclass="ol_sensory")
         self._readouts = {

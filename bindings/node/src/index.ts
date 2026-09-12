@@ -14,6 +14,7 @@ export interface Info {
   n_actions: number; controls: string[]; layout: Layout; brain_ms: number; has_policy: boolean;
   has_audition: boolean; sample_rate: number | null; retina_grid: [number, number];
   has_annotations: boolean; has_positions: boolean; populations: Record<string, number>;
+  detection_classes: string[] | null;
 }
 
 export interface StepInput {
@@ -29,7 +30,13 @@ export interface StepInput {
   /** Dopamine for plasticity; negative values drive the punishment neurons. */
   reward?: number;
   observeOnly?: boolean;
+  /** Objects a detector found, for an artifact with a detection encoder (see Info.detection_classes). */
+  detections?: Detection[];
 }
+
+/** One detected object: a class id or name from the artifact's classes, a box in fractions
+ *  of the frame (left, top, right, bottom), and a confidence in [0, 1]. */
+export interface Detection { class: number | string; box: [number, number, number, number]; score?: number; }
 
 export interface Probe { spikes: number[]; rates: number[]; }
 
@@ -130,6 +137,7 @@ export class NeuroFly {
     }
     if (s.reward !== undefined) req.reward = s.reward;
     if (s.observeOnly) req.observe_only = true;
+    if (s.detections && s.detections.length) req.detections = s.detections;
     return req;
   }
 

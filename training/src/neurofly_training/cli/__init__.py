@@ -17,6 +17,8 @@
     neurofly build   artifacts/base --brain malecns --keys w,a,s,d --mouse   # train it elsewhere
     neurofly eval    artifacts/myapp data/recordings/run1 --reward my_project.py:MyTask
     neurofly surrogate data/recordings/run1 --brain malecns --epochs 5   # train through the brain
+    neurofly detect-label footage/*.mp4 --detect "owl2:enemy,health pack" --out data/objects
+    neurofly detect-train data/objects --out runs/det1   # then --detect runs/det1 anywhere
     neurofly bench | inspect                          # brain tools
 
 Every subcommand takes --help. ``python -m neurofly_training`` is the same thing.
@@ -39,6 +41,9 @@ COMMANDS = {
     "calibrate": ("calibrate", "sweep a gain for sparse, not silent, brain activity"),
     "idm": ("idm", "train an inverse dynamics model on labelled recordings"),
     "label": ("label", "label footage that has no input log, with an inverse dynamics model"),
+    "detect-label": ("detect_label", "auto-label objects in footage with a detector (or "
+                                     "preview one), as a YOLO-layout dataset"),
+    "detect-train": ("detect_train", "fine-tune a fast object detector on such a dataset"),
     "replay": ("replay", "a video with the brain's spikes and controls drawn beside the frames"),
     "export-body": ("export_body", "the fly body as a glTF, for Three.js and other renderers"),
     "surrogate": ("surrogate", "train through the brain with surrogate gradients"),

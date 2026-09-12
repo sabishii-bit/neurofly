@@ -88,6 +88,50 @@ index>` captures a device (a microphone, a line input); `neurofly devices` lists
 them. Sound goes to the auditory neurons through the audition encoder, and `--include-audio`
 also gives the policy the band levels directly.
 
+## Objects on screen: detectors
+
+A fly cannot learn from pixels what an enemy is. An object detector can say where the
+enemies are, and a *detection encoder* turns that into drive on central-brain neurons, one
+labelled line per class and place. `--detect` names the detector on `train`, `es`,
+`imitate`, `surrogate`, `play`, `watch`, `build` and `eval`; the classes go into the
+artifact so a consumer in any language knows which ids to send.
+
+```powershell
+pip install -e training[detect]
+neurofly play --window "My App" --keys w,a,s,d --detect "owl2:enemy soldier,health pack,door" --dry-run
+```
+
+`owl2:<prompts>` is an open-vocabulary detector (OWLv2, Apache-2.0): describe the objects
+in words and it finds them, no training and no labelling. It is slow (a few frames per
+second on a CPU, about 3 s per 960x540 frame) but it needs nothing from you; `owl:` is the
+older OWL-ViT, three times faster and noticeably worse on screens and drawn objects. Check
+what a prompt finds before trusting it: `neurofly detect-label footage.mp4 --detect
+"owl2:enemy" --preview check.mp4`. Scores are low by nature; 0.1 is a sensible cut.
+
+When you want speed, distil the open-vocabulary detector into a fast one, still without
+labelling anything by hand:
+
+```powershell
+neurofly detect-label footage/*.mp4 --detect "owl2:enemy soldier,health pack" --out data/objects --every 5
+neurofly detect-train data/objects --out runs/det1 --epochs 30
+neurofly play --window "My App" --keys w,a,s,d --detect runs/det1
+```
+
+`detect-label` runs the detector over footage and writes a dataset in the YOLO layout
+(`images/`, `labels/`, `classes.json`, `data.yaml`); `--preview check.mp4` draws what it
+found so you can judge the prompts. If some boxes are wrong, any YOLO-format labelling tool
+opens that folder and you fix only what matters. `detect-train` fine-tunes torchvision's
+SSDLite (BSD, real time on a CPU) and exports `detector.onnx`, which `onnx:runs/det1` runs
+through ONNX Runtime and which a consumer in another language can run the same way.
+
+`--backend yolo` on `detect-train`, and `yolo:weights.pt` as a spec, use Ultralytics YOLO
+instead (`pip install -e training[yolo]`). That package is AGPL-3.0; the rest of neurofly
+is not, so choose it knowingly.
+
+Detections on a recording are computed once and cached next to the video. `--detection-grid`
+sets the cells per class, `--detection-gain` the drive, and `--include-detections` also
+hands the grids to the policy directly.
+
 ## Reward: writing a Task
 
 The raw interface only sees pixels and sound. A `Task` turns them into reward and episode

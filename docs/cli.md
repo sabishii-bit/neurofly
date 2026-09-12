@@ -27,6 +27,8 @@ current options.
 | `idm` | train an inverse dynamics model on labelled recordings |
 | `label` | label footage that has no input log, with an inverse dynamics model |
 | `replay` | a video with the brain's spikes and the controls drawn beside the frames |
+| `detect-label` | run a detector over footage (`--detect`, `--every`, `--preview`) into a YOLO-layout dataset (`--out`) |
+| `detect-train` | fine-tune a detector on such a dataset (`--out`, `--backend torchvision\|yolo`, `--epochs`, `--size`) |
 | `export-body` | the fly body as a glTF (`--out`, `--task`) for Three.js and other renderers, and with `--mjcf DIR` the complete MuJoCo model; pair with `watch --poses` or `--pose-ws` |
 
 ### Environment options (train, es, imitate, play, build)
@@ -70,6 +72,10 @@ PC options (the same commands):
 | `--audio-gain` | 15 | drive at full loudness, mV |
 | `--include-frame` | off | also give the policy a 12 x 16 luminance grid |
 | `--include-audio` | off | also give the policy the 16 audio band levels |
+| `--detect` | none | object detector: `owl2:enemy,health pack` (or the faster, weaker `owl:`), a `detect-train` run directory, `onnx:DIR`, `yolo:weights.pt` |
+| `--detection-grid` | 6,8 | cells per detected class |
+| `--detection-gain` | 15 | drive at full coverage of a cell, mV |
+| `--include-detections` | off | also give the policy the detection grids |
 | `--dopamine-punish` | 0 | mV on PPL1 dopamine neurons while reward is negative |
 
 ### train

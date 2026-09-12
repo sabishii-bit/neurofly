@@ -29,6 +29,10 @@ protocol that covers both using the brain and training it.
 * **Experiments**: stimulate, silence and probe any neurons by connectome type while the
   brain runs, from the command line or the API; replay videos with the spike raster beside
   the frames; a gain calibration sweep; a small `toy` brain with a designed path for tests.
+* **Objects on screen**: `--detect "owl2:enemy,health pack"` runs an open-vocabulary
+  detector (no training, no labelling) into a detection encoder on central-brain neurons;
+  `detect-label` and `detect-train` distil it into a fast detector exported to ONNX, with
+  YOLO as an opt-in backend.
 * **Learning from footage**: an inverse dynamics model labels video that has no input log;
   corrections while the fly plays become new labels (DAgger); template matching and OCR
   helpers turn what is on screen into reward.

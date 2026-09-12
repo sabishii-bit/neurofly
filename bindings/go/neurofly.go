@@ -52,6 +52,15 @@ type Step struct {
 	SampleRate int
 	Channels   int
 	Reward     *float64
+	Detections []Detection // objects a detector found, for a detection encoder
+}
+
+// Detection is one detected object: a class id (index into the artifact's detection
+// classes), a box in fractions of the frame (left, top, right, bottom) and a score in [0, 1].
+type Detection struct {
+	Class int        `json:"class"`
+	Box   [4]float32 `json:"box"`
+	Score float32    `json:"score"`
 }
 
 // Result is the runtime's answer to Step (controls) or Observe (Features).
@@ -197,6 +206,9 @@ func (c *Client) stepRequest(op string, s Step) map[string]any {
 	}
 	if s.Reward != nil {
 		req["reward"] = *s.Reward
+	}
+	if len(s.Detections) > 0 {
+		req["detections"] = s.Detections
 	}
 	return req
 }

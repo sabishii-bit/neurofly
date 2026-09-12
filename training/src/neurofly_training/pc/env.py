@@ -47,9 +47,10 @@ class PCEnv(gym.Env):
 
     def __init__(self, model: Model, *, video: VideoSource, controls: Controls | None = None,
                  audio: AudioSource | None = None, task: Task | None = None, fps: float = 10.0,
-                 realtime: bool | None = None, max_steps: int | None = None):
+                 realtime: bool | None = None, max_steps: int | None = None, detector=None):
         self.model = model
         self.video, self.audio = video, audio
+        self.detector = detector
         self.controls = controls if controls is not None else NullControls()
         self.task = task if task is not None else NoTask()
         self.fps = float(fps)
@@ -67,6 +68,7 @@ class PCEnv(gym.Env):
         self.metadata = dict(self.metadata, render_fps=max(1, int(round(self.fps))))
         self._frame = None
         self._chunk = None
+        self._dets = None
         self.t = 0
 
     # --- convenience --------------------------------------------------------------
@@ -106,9 +108,15 @@ class PCEnv(gym.Env):
         self._chunk = self.audio.reset() if self.audio is not None else None
         self.t = 0
         self.model.reset()
+        if self.detector is not None:
+            self.detector.reset()
         if self.clock is not None:
             self.clock.reset()
-        return self.model.observe(self._frame, self._chunk), {}
+        return self.model.observe(self._frame, self._chunk, detections=self._detect()), {}
+
+    def _detect(self):
+        self._dets = self.detector.detect(self._frame) if self.detector is not None else None
+        return self._dets
 
     def step(self, action):
         state = self.model.layout.decode(action)
@@ -118,10 +126,12 @@ class PCEnv(gym.Env):
         more = self._read()
         self.t += 1
         info = {"t": self.t, "held": state.held, "state": state}
+        if self.detector is not None:
+            info["detections"] = self._detect()
         reward = float(self.task.reward(self._frame, self._chunk, state, info))
         terminated = bool(self.task.done(self._frame, self._chunk, info))
         truncated = (not more) or (self.max_steps is not None and self.t >= self.max_steps)
-        obs = self.model.observe(self._frame, self._chunk, reward=reward)
+        obs = self.model.observe(self._frame, self._chunk, reward=reward, detections=self._dets)
         info["brain_spikes"] = self.model.last_spikes
         if terminated or truncated:
             self.controls.release_all()
@@ -135,3 +145,5 @@ class PCEnv(gym.Env):
         self.video.close()
         if self.audio is not None:
             self.audio.close()
+        if self.detector is not None:
+            self.detector.close()

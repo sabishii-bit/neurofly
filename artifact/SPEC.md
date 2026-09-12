@@ -12,6 +12,7 @@ A trained controller on disk, readable from any language. Version 1.
   retina/                indices.bin pixels.bin on.bin          (hex mode)
                          matrix_*.bin targets.bin              (projection mode)
   audition/              matrix_*.bin targets.bin              (optional)
+  detection/             matrix_*.bin targets.bin              (optional)
   policy/                W.bin b.bin  |  W0.bin b0.bin ... obs_mean.bin obs_var.bin   (optional)
   punish/                indices.bin                           (optional)
   neurons/               ids.bin annotations.json              (optional, provenance)
@@ -47,6 +48,7 @@ annotations; they differ in the encoders and the output layout.
 | `readout.indices` | int64 array: the neurons whose firing rates are the features |
 | `retina` | `params` and `tables` of the frame encoder (below) |
 | `audition` | `params` and `tables` of the sound encoder, or `null` |
+| `detection` | `params` and `tables` of the detected-object encoder, or `null` (below) |
 | `layout` | which controls the action vector holds (below) |
 | `features.n`, `actions.n` | feature and action vector lengths |
 | `policy` | `params` and `tables` of the policy, or `null` (then only `observe` is possible) |
@@ -65,6 +67,7 @@ annotations; they differ in the encoders and the output layout.
 | `readout_scale` | features = firing rate in Hz times this (0.01) |
 | `include_frame`, `frame_grid` | append a `rows x cols` luminance grid of the frame to the features |
 | `include_audio` | append the audio band levels to the features |
+| `include_detections` | append the detection grids to the features |
 | `plasticity`, `plasticity_lr`, `dopamine_punish` | optional online learning; a consumer may ignore them |
 
 ### brain
@@ -124,9 +127,21 @@ bands = shape * min(1, rms / loud_ref)
 drive = gain * max(matrix @ bands, 0)          (CSR, n_neurons x n_bands)
 ```
 
+### detection
+
+`params`: `classes` (names, in id order), `grid` `[rows, cols]`, `gain`. The consumer runs a
+detector of its own choosing (the training package ships several; `config.meta.detect`
+records which one the artifact was built with) and sends, per step, boxes with class ids in
+this list, as fractions of the frame. For each class `c` a `rows x cols` grid holds, per
+cell, the largest score-weighted fraction of the cell covered by a box of class `c`; the
+grids are flattened class-major, then row, then column, into a vector `g` of length
+`n_classes * rows * cols`; `drive = gain * max(matrix @ g, 0)` (CSR `matrix_indptr`,
+`matrix_indices`, `matrix_values`, shape `n_neurons x len(g)`), on the `targets`. An artifact
+without `detection` ignores detections.
+
 ### features
 
-`[rate[readout[i]] * readout_scale for i] ++ (luminance grid if include_frame) ++ (bands if include_audio)`
+`[rate[readout[i]] * readout_scale for i] ++ (luminance grid if include_frame) ++ (bands if include_audio) ++ (detection grids if include_detections)`
 
 ### layout
 
@@ -187,9 +202,9 @@ WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
 
 | Request | Response |
 |---|---|
-| `{"op": "info"}` | name, `n_neurons`, `n_features`, `n_actions`, `controls`, `layout`, `brain_ms`, `has_policy`, `has_audition`, `sample_rate`, `retina_grid` |
+| `{"op": "info"}` | name, `n_neurons`, `n_features`, `n_actions`, `controls`, `layout`, `brain_ms`, `has_policy`, `has_audition`, `sample_rate`, `retina_grid`, `detection_classes` (or null) |
 | `{"op": "reset"}` | `{"ok": true}` |
-| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
+| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool, "detections"?: [{"class": id or name, "box": [x0, y0, x1, y1], "score"?: s}, ...]}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
 | `{"op": "observe", ...the step fields...}` | `{"ok": true, "t", "spikes", "features"}`: the feature vector, no policy involved |
 | `{"op": "set_policy", "type": "linear", "W": [[...]], "b": [...]}` | installs a linear policy (`W` is `actions x features`); `{"ok": true, "type": "linear"}` |
 | `{"op": "set_policy", "type": "mlp", "layers": [{"W", "b"}, ...], "activation"?, "obs_mean"?, "obs_var"?, "obs_clip"?, "obs_eps"?}` | installs an MLP policy |
@@ -220,7 +235,9 @@ likes, installs the result and saves a complete artifact.
 service defined in `core/src/neurofly_core/rpc/neurofly.proto`: `Info`, `Reset`, `Step`,
 `Observe`, `Stream` (bidirectional, one reply per request), `BodyStep` and `BodyStream`
 (body artifacts), `SetPolicy`, `Save`, `Stimulate`, `Silence`, `Probe`, `Clear`, `Select`,
-`Activity` and `Positions`.
+`Activity` and `Positions`. `StepRequest.detections` carries detected objects
+(`Detection`: `class_id`, `x0`, `y0`, `x1`, `y1`, `score`) and `Info.detection_classes`
+the classes an artifact expects.
 `Info.kind` says which kind is loaded; `Info.n_obs` and `Info.obs_json` describe a body
 artifact's observation vector. Frames and audio are `bytes` (no
 base64); a linear policy is one `Layer` with `w` row-major. Generate a client for any

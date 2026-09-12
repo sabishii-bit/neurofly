@@ -30,9 +30,15 @@ def load_recording(path: str):
 
 
 def run_recording(model, recording: str, *, task=None, max_frames: int | None = None,
-                  progress: bool = False) -> dict:
+                  progress: bool = False, detector=None) -> dict:
     video_path, meta, actions = load_recording(recording)
     video = VideoFile(video_path)
+    if model.detection is not None and detector is None:
+        raise ValueError("this artifact has a detection encoder: pass --detect")
+    if detector is not None:
+        from neurofly_training.pc.detect import cached
+        detector = cached(detector, os.path.abspath(video_path))
+        detector.reset()
     fps = video.fps or float(meta.get("fps", 10.0))
     audio = None
     if model.audition is not None:
@@ -44,7 +50,8 @@ def run_recording(model, recording: str, *, task=None, max_frames: int | None = 
     feats, acts, rewards, t = [], [], [], 0
     try:
         while frame is not None and (max_frames is None or t < max_frames):
-            f = model.observe(frame, chunk)
+            dets = detector.detect(frame) if detector is not None else None
+            f = model.observe(frame, chunk, detections=dets)
             feats.append(f)
             if model.policy is not None:
                 a = model.act(f)
@@ -62,6 +69,8 @@ def run_recording(model, recording: str, *, task=None, max_frames: int | None = 
         video.close()
         if audio is not None:
             audio.close()
+        if detector is not None:
+            detector.close()
     n = min(len(feats), len(actions))
     out = {"recording": recording, "frames": n, "fps": fps}
     if acts:
@@ -80,11 +89,15 @@ def run_recording(model, recording: str, *, task=None, max_frames: int | None = 
 
 def evaluate_artifact(artifact: str, recordings: list[str], *, reward: str | None = None,
                       max_frames: int | None = None, device: str = "cpu",
-                      progress: bool = False) -> dict:
+                      progress: bool = False, detect=None) -> dict:
     model = load_model(artifact, device=device)
     task = load_task(reward) if reward else None
-    per = [run_recording(model, r, task=task, max_frames=max_frames, progress=progress)
-           for r in recordings]
+    detector = None
+    if model.detection is not None:
+        from neurofly_training.pc.detect import make_detector
+        detector = make_detector(detect or model.config.meta.get("detect"), device=device)
+    per = [run_recording(model, r, task=task, max_frames=max_frames, progress=progress,
+                         detector=detector) for r in recordings]
     report = {"artifact": os.path.abspath(artifact), "name": model.config.name,
               "evaluated": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
               "has_policy": model.policy is not None, "recordings": per}

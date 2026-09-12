@@ -84,13 +84,27 @@ pub struct Step {
     reward: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     observe_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detections: Option<Vec<Detection>>,
+}
+
+/// One detected object for an artifact with a detection encoder: a class id (index into
+/// the artifact's classes), a box in fractions of the frame (left, top, right, bottom) and
+/// a confidence in [0, 1].
+#[derive(Serialize, Clone, Debug)]
+pub struct Detection {
+    pub class: u32,
+    #[serde(rename = "box")]
+    pub bbox: [f32; 4],
+    pub score: f32,
 }
 
 impl Step {
     /// Raw RGB bytes, row-major, three per pixel.
     pub fn rgb(frame: &[u8], width: u32, height: u32) -> Step {
         Step { op: "step", frame: B64.encode(frame), width, height, format: None, audio: None,
-               sample_rate: None, channels: None, reward: None, observe_only: None }
+               sample_rate: None, channels: None, reward: None, observe_only: None,
+               detections: None }
     }
 
     /// An encoded image (`"png"` or `"jpeg"`).
@@ -114,6 +128,12 @@ impl Step {
 
     pub fn reward(mut self, reward: f64) -> Step {
         self.reward = Some(reward);
+        self
+    }
+
+    /// Objects a detector found in this frame.
+    pub fn detections(mut self, dets: Vec<Detection>) -> Step {
+        self.detections = Some(dets);
         self
     }
 

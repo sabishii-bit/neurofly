@@ -97,11 +97,27 @@ def main():
     model = make_pc_model(layout=layout, device=args.device, name=os.path.basename(run_dir),
                           **env_kwargs)
     print(model.describe())
+    dets = None
+    if model.detection is not None:
+        from neurofly_training.pc.detect import cached, make_detector
+        detector = make_detector(args.detect, device=args.device)
+        dets, hold_dets = [], []
+        for rec, (fr, _, _), h in zip(args.recordings, train, hold + [None] * len(train)):
+            d = cached(detector, os.path.abspath(os.path.join(rec, "video.mp4")))
+            d.reset()
+            per = [d.detect(f) for f in (fr + (h[0] if h else []))]
+            d.close()
+            dets += per[:len(fr)]
+            hold_dets.append(per[len(fr):])
+        hold = [(fr, ch, ac, hd) for (fr, ch, ac), hd in zip(hold, hold_dets)]
+        print(f"detections from {detector.name}: {sum(len(x) for x in dets)} boxes on "
+              f"{len(dets)} training frames")
     print(f"training through the brain on {len(frames)} frames, {args.epochs} epochs ...")
     t0 = time.time()
     torch_seed(args.seed)
     history = train_surrogate(model, frames, chunks, actions, epochs=args.epochs, lr=args.lr,
-                              window=args.bptt_window, l2=args.l2, device=args.device, verbose=True)
+                              window=args.bptt_window, l2=args.l2, device=args.device,
+                              verbose=True, detections=dets)
     print(f"done in {time.time() - t0:.0f} s; "
           f"loss {history['loss'][0]:.4f} -> {history['loss'][-1]:.4f}")
 
@@ -120,10 +136,12 @@ def main():
         if not sets:
             return
         X, Y = [], []
-        for fr, ch, ac in sets:
+        for item in sets:
+            fr, ch, ac = item[:3]
+            hd = item[3] if len(item) > 3 else [None] * len(fr)
             model.reset()
-            for f, c in zip(fr, ch):
-                X.append(model.observe(f, c))
+            for f, c, d in zip(fr, ch, hd):
+                X.append(model.observe(f, c, detections=d))
             Y.append(ac)
         X, Y = np.stack(X), np.concatenate(Y)
         print(f"{name}:")

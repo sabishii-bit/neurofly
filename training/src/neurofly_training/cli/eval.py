@@ -25,9 +25,13 @@ def main():
     p.add_argument("--max-frames", type=int, default=None, help="per recording")
     p.add_argument("--out", default=None, help="JSON report path (default <artifact>/eval.json)")
     p.add_argument("--device", default="cpu")
+    p.add_argument("--detect", default=None,
+                   help="detector spec for an artifact with a detection encoder "
+                        "(default: the one it was built with)")
     args = p.parse_args()
     report = evaluate_artifact(args.artifact, args.recordings, reward=args.reward,
-                               max_frames=args.max_frames, device=args.device, progress=True)
+                               max_frames=args.max_frames, device=args.device, progress=True,
+                               detect=args.detect)
     print(format_report(report))
     out = args.out or os.path.join(args.artifact, "eval.json")
     with open(out, "w") as f:

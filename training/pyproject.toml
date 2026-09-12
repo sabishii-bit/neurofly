@@ -30,6 +30,10 @@ dependencies = [
 flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
 # reading numbers off the screen for reward (also needs a Tesseract install)
 ocr = ["pytesseract"]
+# object detectors: open-vocabulary (transformers), fine-tuning (torchvision), ONNX export
+detect = ["transformers", "torchvision", "onnx", "onnxruntime"]
+# Ultralytics YOLO as a detector backend. Their package is AGPL-3.0: opt in knowingly.
+yolo = ["ultralytics"]
 # tests, lint, and regenerating the gRPC stubs
 dev = ["pytest", "pytest-cov", "ruff", "grpcio-tools"]
 

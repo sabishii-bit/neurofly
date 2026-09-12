@@ -6,7 +6,7 @@ An artifact is a directory:
                          provenance, and one entry per array giving its file, dtype and shape
     brain/*.bin          the synapses (CSC by presynaptic neuron: indptr, indices, values in mV)
     readout/ policy/ punish/ neurons/        shared by both kinds
-    retina/ audition/                        kind "pc":   frames and sound in, controls out
+    retina/ audition/ detection/             kind "pc":   frames, sound and objects in, controls out
     proprio/                                 kind "body": a body observation in, actuators out
 
 Arrays are raw little-endian binaries with no header; the manifest says
@@ -31,6 +31,7 @@ from neurofly_core.controls import ControlLayout
 from neurofly_core.decode.linear import ControlDecoder
 from neurofly_core.decode.mlp import MLPPolicy
 from neurofly_core.encode.audition import AuditionEncoder
+from neurofly_core.encode.detection import DetectionEncoder
 from neurofly_core.encode.vision import RetinaEncoder
 from neurofly_core.model import BrainModel, Model, ModelConfig
 
@@ -132,6 +133,10 @@ def save_model(model: BrainModel, path: str, extra: dict | None = None) -> str:
         if model.audition is not None:
             manifest["audition"] = {"params": model.audition.params(),
                                     "tables": w.arrays("audition", model.audition.tables())}
+        manifest["detection"] = None
+        if model.detection is not None:
+            manifest["detection"] = {"params": model.detection.params(),
+                                     "tables": w.arrays("detection", model.detection.tables())}
     elif model.kind == "body":
         manifest["body"] = {
             "actuators": list(model.layout.names),
@@ -218,7 +223,13 @@ def load_model(path: str, device: str = "cpu", backend: str = "auto") -> BrainMo
             audition = AuditionEncoder.from_tables(n, m["audition"]["params"],
                                                    r.arrays(m["audition"]["tables"]),
                                                    device=device)
+        detection = None
+        if m.get("detection"):
+            detection = DetectionEncoder.from_tables(n, m["detection"]["params"],
+                                                     r.arrays(m["detection"]["tables"]),
+                                                     device=device)
         return Model(brain, layout=layout, retina=retina, audition=audition,
+                     detection=detection,
                      policy=_load_policy(m, r, layout, "pc"), **common)
     if m["kind"] == "body":
         b = m["body"]
@@ -298,6 +309,12 @@ def validate(path: str) -> list[str]:
         if m.get("audition"):
             for k, v in m["audition"]["tables"].items():
                 check(v, f"audition.{k}")
+        if m.get("detection"):
+            d = m["detection"]
+            for k, v in d["tables"].items():
+                check(v, f"detection.{k}", max_index=n if k == "targets" else None)
+            if not d["params"].get("classes"):
+                problems.append("detection: no classes")
         n_out = ControlLayout.from_dict(m["layout"]).n
     elif m["kind"] == "body":
         body = m["body"]
@@ -333,6 +350,8 @@ def describe(path: str) -> str:
         rp = m["retina"]["params"]
         lines += [f"  retina: {rp['mode']}, grid {rp['grid']}",
                   f"  audition: {'yes' if m.get('audition') else 'no'}",
+                  "  detection: " + (", ".join(m["detection"]["params"]["classes"])
+                                     if m.get("detection") else "no"),
                   f"  features: {m['features']['n']}; actions: {m['actions']['n']} "
                   f"{ControlLayout.from_dict(m['layout']).names}"]
     else:

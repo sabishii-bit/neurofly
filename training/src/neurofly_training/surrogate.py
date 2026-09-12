@@ -164,11 +164,12 @@ def _losses(logits: torch.Tensor, y: torch.Tensor, mask: torch.Tensor, pos_weigh
 
 def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, lr: float = 1e-2,
                     window: int = 8, l2: float = 1e-4, device: str = "cpu",
-                    verbose: bool = False) -> dict:
+                    verbose: bool = False, detections=None) -> dict:
     """Train the retina's input map and a linear head end to end on (frames, actions).
 
     ``frames``: list of RGB uint8 arrays; ``chunks``: list of audio chunks or None;
-    ``actions``: (T, n_actions) targets in the layout's action space. The model's
+    ``actions``: (T, n_actions) targets in the layout's action space; ``detections``: a
+    list of per-frame detections when the model has a detection encoder. The model's
     retina and policy are replaced by the trained ones. Returns a history dict.
     """
     layout = model.layout
@@ -197,12 +198,18 @@ def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, l
     model.retina.reset()
     if model.audition is not None:
         model.audition.reset()
+    if model.detection is not None:
+        model.detection.reset()
     signals, aud, extras = [], [], []
     for t in range(T):
         on, off = model.retina.signals(frames[t])
         signals.append((torch.from_numpy(on).to(device), torch.from_numpy(off).to(device)))
-        aud.append(model.audition(chunks[t] if chunks else None).to(device).detach()
-                   if model.audition is not None else None)
+        const = (model.audition(chunks[t] if chunks else None).to(device).detach()
+                 if model.audition is not None else None)
+        if model.detection is not None:
+            d = model.detection(detections[t] if detections else None).to(device).detach()
+            const = d if const is None else const + d
+        aud.append(const)
         if n_extra:
             model._frame, model._chunk = frames[t], (chunks[t] if chunks else None)
             extras.append(torch.from_numpy(model.features()[n_read:]).to(device))

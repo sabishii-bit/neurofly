@@ -36,6 +36,7 @@ from neurofly_core.brain.lif import LIFBrain
 from neurofly_core.brain.plasticity import DopamineHebbian
 from neurofly_core.controls import ControlLayout, ControlState
 from neurofly_core.encode.audition import AuditionEncoder
+from neurofly_core.encode.detection import DetectionEncoder
 from neurofly_core.encode.vision import RetinaEncoder, luminance
 from neurofly_core.selection import resolve
 
@@ -49,6 +50,7 @@ class ModelConfig:
     include_frame: bool = False     # PC: append a luminance grid of the frame to the features
     frame_grid: tuple = (12, 16)
     include_audio: bool = False     # PC: append the audio band levels to the features
+    include_detections: bool = False  # PC: append the detection grids to the features
     include_proprio: bool = False   # body: append the raw observation to the features
     plasticity: bool = False        # reward acts as dopamine on synapses onto the readout
     plasticity_lr: float = 1e-3
@@ -259,6 +261,7 @@ class Model(BrainModel):
 
     def __init__(self, brain: LIFBrain, *, readout_idx, layout: ControlLayout,
                  retina: RetinaEncoder, audition: AuditionEncoder | None = None,
+                 detection: DetectionEncoder | None = None,
                  policy=None, config: ModelConfig | None = None, punish_idx=None,
                  neuron_ids=None, neuron_types=None, neuron_superclass=None,
                  neuron_positions=None, positions_known=None):
@@ -269,7 +272,9 @@ class Model(BrainModel):
         self.layout = layout
         self.retina = retina
         self.audition = audition
+        self.detection = detection
         self.include_audio = self.config.include_audio and audition is not None
+        self.include_detections = self.config.include_detections and detection is not None
         self._frame = None
         self._chunk = None
 
@@ -280,6 +285,8 @@ class Model(BrainModel):
             n += int(np.prod(self.config.frame_grid))
         if self.include_audio:
             n += self.audition.n_bands
+        if self.include_detections:
+            n += self.detection.n_inputs
         return n
 
     @property
@@ -291,6 +298,8 @@ class Model(BrainModel):
         named["retina"] = self.retina.indices if self.retina.mode == "hex" else self.retina.targets
         if self.audition is not None:
             named["audition"] = self.audition.targets
+        if self.detection is not None:
+            named["detection"] = self.detection.targets
         return named
 
     def reset(self) -> None:
@@ -298,6 +307,8 @@ class Model(BrainModel):
         self.retina.reset()
         if self.audition is not None:
             self.audition.reset()
+        if self.detection is not None:
+            self.detection.reset()
         self._frame = self._chunk = None
 
     def features(self) -> np.ndarray:
@@ -306,24 +317,29 @@ class Model(BrainModel):
             parts.append(luminance(self._frame, self.config.frame_grid).ravel())
         if self.include_audio:
             parts.append(self.audition.bands(self._chunk))
+        if self.include_detections:
+            parts.append(self.detection.levels)
         return np.concatenate(parts).astype(np.float32)
 
     def observe(self, frame: np.ndarray, audio: np.ndarray | None = None,
-                reward: float = 0.0) -> np.ndarray:
-        """Drive the neurons with a frame (RGB uint8) and the sound since the last
-        observation, run the brain for ``brain_ms``, return the feature vector.
+                reward: float = 0.0, detections=None) -> np.ndarray:
+        """Drive the neurons with a frame (RGB uint8), the sound since the last
+        observation and, when the model has a detection encoder, the objects a detector
+        found in the frame; run the brain for ``brain_ms``; return the feature vector.
         ``reward`` is dopamine for plasticity and, when negative, punishment."""
         self._frame = np.asarray(frame)
         self._chunk = audio
         drive = self.retina(self._frame)
         if self.audition is not None:
             drive = drive + self.audition(audio)
+        if self.detection is not None:
+            drive = drive + self.detection(detections)
         self._run(drive, reward)
         return self.features()
 
     def step(self, frame: np.ndarray, audio: np.ndarray | None = None,
-             reward: float = 0.0) -> tuple[ControlState, dict]:
-        features = self.observe(frame, audio, reward)
+             reward: float = 0.0, detections=None) -> tuple[ControlState, dict]:
+        features = self.observe(frame, audio, reward, detections)
         action = self.act(features)
         state = self.layout.decode(action)
         info = {"t": self.t, "spikes": self.last_spikes, "action": action.tolist(),

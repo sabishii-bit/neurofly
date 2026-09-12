@@ -75,6 +75,11 @@ def audio_from_bytes(raw: bytes, channels: int = 1) -> np.ndarray | None:
     return np.frombuffer(raw, dtype="<f4").reshape(-1, max(1, channels))
 
 
+def decode_detections(req: dict):
+    """The request's ``detections`` list as given (dicts or rows), or None."""
+    return req.get("detections") or None
+
+
 def selection_from(req: dict) -> dict:
     sel = {k: req[k] for k in SELECTION_KEYS if k in req}
     if len(sel) != 1:
@@ -107,7 +112,9 @@ class Session:
         if m.kind == "pc":
             out.update({"has_audition": m.audition is not None,
                         "sample_rate": m.audition.sample_rate if m.audition else None,
-                        "retina_grid": list(m.retina.grid)})
+                        "retina_grid": list(m.retina.grid),
+                        "detection_classes": (list(m.detection.classes) if m.detection
+                                              else None)})
         else:
             out.update({"has_audition": False, "sample_rate": None, "retina_grid": [],
                         "n_obs": m.n_obs,
@@ -136,15 +143,15 @@ class Session:
         return out
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
-                    reward: float = 0.0, observe_only: bool = False) -> dict:
+                    reward: float = 0.0, observe_only: bool = False, detections=None) -> dict:
         m = self.model
         if m.kind != "pc":
             raise ValueError("step / observe need a PC artifact; use body_step for a body one")
         if observe_only or m.policy is None:
-            feats = m.observe(frame, audio, reward)
+            feats = m.observe(frame, audio, reward, detections)
             out = {"ok": True, "t": m.t, "features": feats.tolist(), "spikes": m.last_spikes}
         else:
-            state, info = m.step(frame, audio, reward)
+            state, info = m.step(frame, audio, reward, detections)
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"],
                    "action": info["action"], "held": info["held"]}
             out.update(state.to_dict())
@@ -205,7 +212,8 @@ class Session:
             if op in ("step", "observe"):
                 observe = (op == "observe") or bool(req.get("observe_only"))
                 return self.step_arrays(decode_frame(req), decode_audio(req),
-                                        float(req.get("reward", 0.0)), observe_only=observe)
+                                        float(req.get("reward", 0.0)), observe_only=observe,
+                                        detections=decode_detections(req))
             if op == "set_policy":
                 m.policy = self.policy_from(req)
                 return {"ok": True, "type": m.policy.kind}
