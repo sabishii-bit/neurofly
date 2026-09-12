@@ -1,6 +1,7 @@
 # neurofly
 
-A fruit fly connectome run as a spiking network and wired to a world. Build the brain once
+The neurofly-kit repository: a fruit fly connectome run as a spiking network and wired to
+a world. Build the brain once
 in Python, then train it and run it from Python, Node, Rust, Go, or anything that can start
 a process: the controller travels as a plain artifact, and the runtime speaks a small
 protocol that covers both using the brain and training it.

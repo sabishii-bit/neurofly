@@ -25,8 +25,8 @@ Windows-only; screen regions, keyboard, mouse and everything else work on Linux 
 From a clone of the repository, in a fresh virtual environment:
 
 ```powershell
-git clone https://github.com/sabishii-bit/neurofly
-cd neurofly
+git clone https://github.com/sabishii-bit/neurofly-kit
+cd neurofly-kit
 python -m venv .venv
 .venv\Scripts\Activate.ps1                 # Linux / macOS: source .venv/bin/activate
 pip install -e core[pc] -e training[dev]
