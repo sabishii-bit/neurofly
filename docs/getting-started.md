@@ -75,6 +75,25 @@ The simulated fly, no brain, random actions, written to a video (needs the `flyb
 neurofly watch --task forward --policy random --video videos/random.mp4
 ```
 
+## See it: the demos
+
+`scripts/demo.py` builds what a demo needs (into `assets/demo/`, once), starts a local
+static server and opens the page:
+
+```powershell
+python scripts/demo.py body        # the fly walking an open-loop tripod gait, in Three.js
+python scripts/demo.py brain       # the brain atlas lit by a run's activity
+python scripts/demo.py workbench   # what the fly saw, the brain and the body on one timeline
+python scripts/demo.py web-fps     # a Three.js game training a served brain in the page
+```
+
+The body demo is the one to look at when you want to know the limbs are right: six legs
+cycling in two alternating tripods, coxa, femur, tibia and claws, with no training
+involved (`neurofly watch --task forward --policy gait` is the same thing as a video). It
+is a limb demo, not locomotion: open-loop, the fly stays upright and barely moves; walking
+that goes somewhere is what `neurofly train --task forward` is for. The tests run with `scripts	est.ps1` or
+`scripts/test.sh`; arguments go to pytest (`-k body`, `--cov`).
+
 ## Where things go
 
 | Path | Contents |

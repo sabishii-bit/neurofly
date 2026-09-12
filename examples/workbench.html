@@ -169,7 +169,8 @@
       if (q.get("poses")) { poses = await (await fetch(q.get("poses"))).json(); bodies = poses.bodies; document.getElementById("bodynote").textContent = `${bodies.length} bodies, ${poses.frames.length} poses at ${poses.fps} fps`; }
       else document.getElementById("bodynote").textContent = "body loaded; add ?poses= to animate";
       const quat = new THREE.Quaternion();
-      window.__applyPose = (row) => { for (let i = 0; i < bodies.length; i++) { const node = nodes.get(bodies[i]); if (!node) continue; const o = i * 7; node.position.set(row[o], row[o + 1], row[o + 2]); quat.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]); node.quaternion.copy(quat); } };
+      const key = (name) => name.replace(/\s/g, "_").replace(/[^\w-]/g, "");   // GLTFLoader sanitises names
+      window.__applyPose = (row) => { for (let i = 0; i < bodies.length; i++) { const node = nodes.get(key(bodies[i])); if (!node) continue; const o = i * 7; node.position.set(row[o], row[o + 1], row[o + 2]); quat.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]); node.quaternion.copy(quat); } };
       window.__body = F;
     }
 

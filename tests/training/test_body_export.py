@@ -24,4 +24,11 @@ def test_export_body_and_poses(tmp_path):
     poses = json.load(open(path))
     assert poses["bodies"] == rec.bodies and len(poses["frames"]) == 3
     assert len(poses["frames"][0]) == 7 * len(rec.bodies) and poses["up"] == "z"
+    # Three.js's GLTFLoader strips "/" and other punctuation from node names; every pose
+    # body must still map to exactly one node afterwards, or the viewer animates nothing
+    import re
+    sanitise = lambda n: re.sub(r"[^\w-]", "", re.sub(r"\s", "_", n))  # noqa: E731
+    node_keys = [sanitise(n) for n in scene.graph.nodes]
+    assert len(set(node_keys)) == len(node_keys)
+    assert all(sanitise(b) in set(node_keys) for b in poses["bodies"])
     env.close()

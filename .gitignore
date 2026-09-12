@@ -7,7 +7,7 @@ __pycache__/
 .pytest_cache/
 *.mp4
 .venv
-.playwright-mcp/
+.playwright-mcp
 
 # build / tooling
 build/

@@ -165,7 +165,7 @@ Positional: a run directory (optional).
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--policy` | the run's, else `zero` | `ppo`, `es`, `imitation`, `fixed`, `random`, `zero` |
+| `--policy` | the run's, else `zero` | `ppo`, `es`, `imitation`, `fixed`, `random`, `zero`, `gait` (an open-loop tripod gait on body tasks, to see the limbs work; `--gait-hz` sets the stride rate) |
 | `--task`, `--brain`, `--subset` | from the run | overrides |
 | `--keys`, `--buttons`, `--mouse`, `--window`, `--region` | from the run | PC overrides |
 | `--episodes` | 2 | |

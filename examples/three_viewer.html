@@ -66,11 +66,14 @@
     gltf.scene.traverse((o) => { if (o.name) nodes.set(o.name, o); });
 
     // glTF nodes were exported in world frame under the root, so poses apply directly
+    // GLTFLoader sanitises node names the way THREE.PropertyBinding does ("walker/thorax"
+    // becomes "walkerthorax"), so pose body names are looked up the same way
+    const key = (name) => name.replace(/\s/g, "_").replace(/[^\w-]/g, "");
     const q = new THREE.Quaternion();
     let bodies = [];
     function applyPose(row) {
       for (let i = 0; i < bodies.length; i++) {
-        const node = nodes.get(bodies[i]);
+        const node = nodes.get(key(bodies[i]));
         if (!node) continue;
         const o = i * 7;
         node.position.set(row[o], row[o + 1], row[o + 2]);
@@ -80,6 +83,7 @@
     }
 
     let frames = null, fps = 50, t = 0, last = performance.now();
+    window.__nf = { nodes, applyPose, get bodies() { return bodies; }, get t() { return t; }, get frames() { return frames; } };
     if (wsUrl) {
       const ws = new WebSocket(wsUrl);
       ws.onmessage = (ev) => {

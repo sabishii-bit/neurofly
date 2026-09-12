@@ -108,6 +108,9 @@ runs/            raw training outputs (git-ignored)
 artifacts/       exported controllers, what you ship (git-ignored by default)
 ```
 
+`scripts/` has the test runner (`test.ps1`, `test.sh`) and `demo.py`, which builds and
+opens the 3D demos: the walking body, the lit brain, the workbench, the web game.
+
 ## Quick start
 
 ```powershell

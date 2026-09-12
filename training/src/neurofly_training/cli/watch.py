@@ -5,6 +5,7 @@
     neurofly watch runs/<imitation run> --task data/recordings/run1/video.mp4
     neurofly watch --task forward --policy random --video videos/random.mp4
     neurofly watch --task forward --brain malecns --policy zero    # fly stands, brain runs
+    neurofly watch --task forward --policy gait --poses assets/gait.json --video videos/gait.mp4
 
 On the live screen (--task pc) this only prints what it would press; use play_pc.py
 to let the brain control the PC.
@@ -57,8 +58,10 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("run", nargs="?", default=None)
     p.add_argument("--policy", default=None,
-                   choices=["ppo", "es", "imitation", "fixed", "random", "zero"],
-                   help="default: the run's algorithm, or 'zero' without a run")
+                   choices=["ppo", "es", "imitation", "fixed", "random", "zero", "gait"],
+                   help="default: the run's algorithm, or 'zero' without a run; 'gait' is an "
+                        "open-loop tripod gait (body tasks), to see the limbs work")
+    p.add_argument("--gait-hz", type=float, default=2.0, help="gait: stride cycles per second")
     p.add_argument("--task", default=None, help=", ".join(list_tasks()))
     p.add_argument("--brain", default=None, choices=["none", "malecns", "synthetic", "toy"])
     p.add_argument("--subset", default=None)
@@ -123,6 +126,12 @@ def main():
                                fps=(env.fps if pc else CONTROL_HZ / every))
         for line in sinks.describe():
             print(line)
+    gait = None
+    if policy == "gait":
+        if pc:
+            raise SystemExit("--policy gait is for body tasks")
+        from neurofly_training.body.gait import TripodGait
+        gait = TripodGait(control_hz=CONTROL_HZ, stride_hz=args.gait_hz)
     venv = DummyVecEnv([lambda: env])
     venv, model, decoder = load_policy(policy, args.run, dict(cfg, task=env_kwargs["task"]),
                                        env, venv)
@@ -150,6 +159,8 @@ def main():
                 action = np.asarray(decoder(obs[0]))[None]
             elif policy == "random":
                 action = np.stack([venv.action_space.sample()])
+            elif policy == "gait":
+                action = gait(steps)[None]
             else:
                 action = np.zeros((1,) + venv.action_space.shape, dtype=venv.action_space.dtype)
             last = env.root_position() if start is not None else None

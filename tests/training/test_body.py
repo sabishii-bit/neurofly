@@ -48,3 +48,35 @@ def test_forward_task_reward_and_termination():
 
 def test_sb3_check_env():
     check_env(make_body_env("forward", seed=0), warn=False)
+
+
+def test_tripod_gait_moves_every_leg():
+    """The open-loop gait swings all six legs in two alternating tripods, and the fly
+    neither falls nor stays frozen."""
+    from neurofly_training.body.gait import TRIPOD_A, TRIPOD_B, TripodGait
+    from neurofly_training.body.actuators import leg_actuator_indices
+    gait = TripodGait(control_hz=500, stride_hz=2.0)
+    acts = gait.actions(250)                                  # one full cycle
+    assert acts.shape == (250, 59) and np.abs(acts).max() <= 1.0
+    for t, side in TRIPOD_A + TRIPOD_B:
+        coxa = leg_actuator_indices(t, side)[2]
+        assert acts[:, coxa].std() > 0.2                      # every leg strides
+    a_coxa = leg_actuator_indices(*TRIPOD_A[0])[2]
+    b_coxa = leg_actuator_indices(*TRIPOD_B[0])[2]
+    assert np.corrcoef(acts[:, a_coxa], acts[:, b_coxa])[0, 1] > 0.9   # the tripods alternate
+    claw = leg_actuator_indices("T1", "L")[-1]
+    assert (acts[:, claw] == -1).all()                                 # no grip by default
+    gripping = TripodGait(control_hz=500, adhesion=0.5).actions(250)[:, claw]
+    assert gripping.min() == pytest.approx(-1.0, abs=1e-3)
+    assert gripping.max() == pytest.approx(0.0, abs=1e-3)
+    env = make_body_env("forward", seed=0)
+    obs, _ = env.reset()
+    jp = env.obs_slices["walker/joints_pos"]
+    joints = []
+    for k in range(200):
+        obs, r, term, trunc, _ = env.step(gait(k))
+        joints.append(obs[jp.start:jp.stop])
+        assert not term
+    joints = np.stack(joints)
+    assert (joints.std(axis=0) > 0.05).sum() >= 12                    # many joints moved
+    env.close()
