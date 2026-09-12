@@ -190,6 +190,7 @@ def test_yolo_world_with_fake_package(monkeypatch):
     fake = types.ModuleType("ultralytics")
     fake.YOLOWorld = fake.YOLO = YOLOWorld
     monkeypatch.setitem(sys.modules, "ultralytics", fake)
+    monkeypatch.setitem(sys.modules, "clip", types.ModuleType("clip"))   # the backend needs both
     det = D.make_detector("yolo-world:enemy,door")
     assert det.classes == ["enemy", "door"] and det.detect(np.zeros((8, 8, 3), np.uint8))[0][
         "label"] == "enemy"
