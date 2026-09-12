@@ -185,7 +185,8 @@ the server's `set_policy` and `save` (see [Runtime](runtime.md)).
 
 Positional: the artifact, then recording directories. `--reward module:Name` scores reward
 under a Task; `--max-frames` caps each recording; `--out` names the JSON report (default
-`<artifact>/eval.json`); `--device`.
+`<artifact>/eval.json`); `--device`; `--detect SPEC` names the detector for an artifact with
+a detection encoder (default: the one it was built with).
 
 ### surrogate
 
@@ -212,6 +213,33 @@ Positional: labelled recording directories. `--context` (frames before and after
 
 Positional: video files. `--idm RUN` (from `idm`), `--out DIR` (one recording directory per
 video is written under it), `--max-frames`.
+
+### detect-label
+
+Positional: video files or recording directories. `--detect SPEC` (required; see `--detect`
+above), `--out DIR` (a dataset in the YOLO layout, created or extended: `images/`,
+`labels/` with `class cx cy w h` in fractions, `classes.json`, `data.yaml`), `--every N`
+(use every N-th frame, 1), `--max-frames` (per video), `--threshold` (confidence cut),
+`--preview FILE.mp4` (a video with the boxes drawn), `--device`. Give `--out`, `--preview`
+or both.
+
+### detect-train
+
+Positional: a dataset from `detect-label`. `--out DIR` (required), `--backend`
+(`ssdlite`, `rtdetr`, `dfine`, `yolo`; default `ssdlite`), `--model` (weights or model id to
+start from; the backend's default otherwise), `--epochs` (30), `--size` (input square;
+320 for `ssdlite` and `yolo`, 640 for `rtdetr` and `dfine`), `--batch` (8), `--lr`,
+`--holdout` (0.1), `--threshold` (confidence cut written into the run, 0.3), `--seed`,
+`--no-pretrained` (`ssdlite`: random backbone, no download), `--no-onnx`, `--device`.
+Writes `detector.json` plus the weights (and `detector.onnx` where the export works) to
+the run directory, which is then a detector spec on its own.
+
+### detect-list and detect-install
+
+`detect-list` prints every backend with its kind, whether it is installed, its licence,
+its speed on a CPU and what it is. `detect-install NAME...` pip-installs what the named
+backends need into the running Python; `--dry-run` only prints the packages, `--upgrade`
+upgrades them.
 
 ### replay
 

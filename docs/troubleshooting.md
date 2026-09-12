@@ -76,3 +76,24 @@ mp4 needs even dimensions; the writer is told to accept any size, but very unusu
 The panic key is read by a background listener; another program capturing the keyboard
 exclusively can hide it. Ctrl+C in the terminal also stops the script, and every exit path
 releases all keys and buttons.
+
+**An open-vocabulary detector finds nothing.**
+OWL-ViT (`owl:`) is weak on screens and drawn objects; use `owl2:` or `gdino:`. Scores are
+low by nature: `--threshold 0.1` for OWL, 0.25 for the others. Check what a prompt finds
+with `neurofly detect-label footage.mp4 --detect "owl2:enemy" --preview check.mp4` and
+reword the prompt ("enemy soldier" beats "enemy"). Desktop UI is out of every detector's
+domain; game characters, items and vehicles are not.
+
+**`detect-train --backend rtdetr|dfine` fails with `selected index k out of range`.**
+The input square is too small for a transformer detector to pick its queries from. Leave
+`--size` at its default (640) or keep it at 320 or more.
+
+**Installing a backend changed numpy, or `import numpy` fails with a circular import.**
+Ultralytics installs its own requirements while running and can replace the pinned numpy.
+neurofly turns that off (`YOLO_AUTOINSTALL=False`) when it uses Ultralytics; if it already
+happened, `pip install --force-reinstall --no-deps numpy==1.26.4` repairs the environment.
+Install backends with `neurofly detect-install` or the `detect` / `yolo` extras.
+
+**`detector backend 'x' needs ...: run neurofly detect-install x`.**
+The spec names a backend whose packages are not installed. `neurofly detect-list` shows
+which are, with their licences; `detect-install` fetches the missing ones.

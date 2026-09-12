@@ -61,6 +61,14 @@ neurofly-core info artifacts/myapp
 neurofly-core run  artifacts/myapp --window "My App" --dry-run
 ```
 
+The brain told what is on the screen by an object detector you describe in words (needs the
+`detect` extra; the first run downloads the detector's weights):
+
+```powershell
+neurofly play --region 0,0,800,600 --keys w,a,s,d --brain malecns --detect "owl2:enemy,health pack" --dry-run --steps 20
+neurofly detect-list      # every detector backend, its licence, and whether it is installed
+```
+
 The simulated fly, no brain, random actions, written to a video (needs the `flybody` extra):
 
 ```powershell

@@ -107,6 +107,15 @@ half the sample rate (the shape of the spectrum, scaled by loudness) and project
 a random sparse map onto the auditory neurons. Tonotopy is not annotated, so which neuron
 hears which band is engineered. `--audio-gain` is the drive at full loudness.
 
+### PC: detected objects (`neurofly_core.encode.detection`)
+
+A detector outside the brain (see [The PC](pc.md)) turns the frame into boxes with class
+names. Each box is painted onto a coarse grid for its class, and every cell of every class
+drives its own set of central-brain interneurons, a labelled line: "an enemy, upper left"
+is a particular group of neurons firing. Nothing in the connectome says which neurons
+those should be, so the assignment is engineered, like the audition map. The classes
+travel in the artifact; the detector does not.
+
 ## Readouts and outputs
 
 `--readout` names the population the agent sees, joined by `+`: `motor` (leg motor
@@ -132,6 +141,8 @@ sensory neuron serves, which eye and column each optic-lobe neuron belongs to, a
 head neurons are auditory.
 
 Engineered by you: the LIF parameters (uniform across neurons), every encoder (the maps from
-sensors, pixels and sound onto neurons), and the map from readout rates to actions. Those
+sensors, pixels, sound and detected objects onto neurons), the object detector itself when
+you use one (a separate network with no biological counterpart), and the map from readout
+rates to actions. Those
 maps are the parts you train. A fly that walks or uses the PC is "a policy that learned to
 do it through the connectome's dynamics", not "the connectome knows how".

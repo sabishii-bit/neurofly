@@ -166,6 +166,17 @@ expose `get_params()` / `set_params()` on a flat vector, which is all evolution 
 or any other black-box optimiser needs. To export a new kind of policy, give it `params()`
 and `tables()` (see `neurofly_core.decode.mlp`) and a branch in `artifact.load_model`.
 
+## A detector backend
+
+Detectors are entries in `neurofly_training.pc.backends.BACKENDS`: a name (the spec
+prefix), the pip packages it needs, its licence, a default model, and dotted paths to a
+factory `(arg, device, threshold) -> Detector` and, for trainable ones, a trainer
+`(dataset, out, **options) -> history`. A `Detector` has `classes` (names in id order),
+`detect(frame) -> [{"class", "box", "score"}]` with the box in fractions of the frame, and
+optional `reset()` / `close()`. Add the entry and the factory (the existing ones in
+`neurofly_training.pc.detect` are ten to forty lines each) and `--detect name:arg`,
+`detect-list`, `detect-install` and `detect-train --backend name` all know about it.
+
 ## A new consumer language
 
 Nothing to add to this repository: read [artifact/SPEC.md](../artifact/SPEC.md) and either

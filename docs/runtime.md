@@ -113,6 +113,15 @@ name), and all three have the training calls too (`observe`, `set_policy`, `save
 and write lines works the same way; the WebSocket flavour serves browsers and languages
 without subprocess control.
 
+An artifact built with `--detect` has a detection encoder and expects detected objects on
+every step: `detections` in the JSON request (`{"class": id or name, "box": [x0, y0, x1,
+y1], "score"}` with the box in fractions of the frame), `StepRequest.detections` over gRPC,
+`detections` on the Node, Rust and Go step inputs. `info` lists the classes it expects
+(`detection_classes`). The consumer runs the detector itself: `neurofly detect-train`
+exports `detector.onnx`, which ONNX Runtime loads in every language the bindings cover, and
+`neurofly_training.pc.detect.OnnxDetector` shows the pre- and post-processing to copy. A
+step without detections is a step with nothing detected.
+
 ## Training from another language
 
 The trainable part of a controller is the policy: a linear table or a small MLP on top of

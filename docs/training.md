@@ -141,3 +141,9 @@ neurons in the same order.
 * **Brain time.** `--brain-ms` on the PC (default 10) is how long the brain integrates each
   frame; rates have a 50 ms time constant, so more brain time gives steadier readouts at
   the cost of speed.
+* **Objects.** `--detect SPEC` adds a detection encoder: what a detector finds drives
+  central-brain neurons, one labelled line per class and place, so the readout can carry
+  "an enemy on the left" where pixels alone cannot. `--include-detections` also hands the
+  grids to the policy directly. Recordings' detections are computed once and cached next
+  to the video, so `imitate` and `surrogate` pay for the detector on the first pass only.
+  See [The PC](pc.md) for the backends.

@@ -9,11 +9,11 @@ Python; the result is an artifact that runs from any language.
 | [Installation](installation.md) | requirements, the two packages and their extras, the body, GPU, the data, the bindings, known install problems |
 | [Getting started](getting-started.md) | run something in five minutes once installed |
 | [Concepts](concepts.md) | understand the brain, the subsets, the encoders and decoders, and what is real versus engineered |
-| [The PC](pc.md) | let the brain see the screen, hear the sound, and use keyboard and mouse |
+| [The PC](pc.md) | let the brain see the screen, hear the sound, find objects with a detector, and use keyboard and mouse |
 | [The body](body.md) | make the simulated fly walk, with or without the brain |
 | [Training](training.md) | choose between PPO, evolution strategies, imitation and plasticity; understand run directories |
 | [Runtime and artifacts](runtime.md) | export a run, run it without the training stack, use it from Node, Rust, or anything else |
-| [Extending](extending.md) | write a `Task`, swap a source, add an encoder, use the Python API directly |
+| [Extending](extending.md) | write a `Task`, swap a source, add an encoder or a detector backend, use the Python API directly |
 | [Command reference](cli.md) | every `neurofly` and `neurofly-core` command and option |
 | [Performance](performance.md) | what a step costs, the two brain backends, GPU |
 | [Troubleshooting](troubleshooting.md) | things that go wrong and what they mean |
