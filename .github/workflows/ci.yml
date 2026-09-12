@@ -43,7 +43,7 @@ jobs:
         run: neurofly export-atlas --out assets/brain-atlas --check
       - name: Build the Node package (its tests run from pytest)
         working-directory: bindings/node
-        run: npm ci && npm run build
+        run: npm install --no-audit --no-fund && npm run build   # no lockfile is committed
       - name: Tests
         run: python -m pytest -q --no-header -p no:cacheprovider
 
