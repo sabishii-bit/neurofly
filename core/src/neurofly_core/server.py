@@ -104,6 +104,30 @@ class Session:
         self.model = model
         self.model.reset()
         self.after_step = list(after_step)   # callables run after every successful step
+        self.recorder = None
+
+    # --- recording what this session sees ---------------------------------------------------
+
+    def record_start(self, path: str, fps: float = 10.0) -> dict:
+        """Start writing the frames, sound and actions of every later step to a recording
+        directory (the format ``neurofly record`` writes)."""
+        from neurofly_core.recording import Recorder
+        self.record_stop()
+        m = self.model
+        if m.kind != "pc":
+            raise ValueError("recording is for PC artifacts (frames in)")
+        sr = m.audition.sample_rate if m.audition else 16000
+        self.recorder = Recorder(path, m.layout, fps=fps, sample_rate=sr)
+        return {"ok": True, "path": path, "recording": True}
+
+    def record_stop(self) -> dict:
+        if self.recorder is None:
+            return {"ok": True, "recording": False, "n_frames": 0}
+        meta = self.recorder.close()
+        out = {"ok": True, "recording": False, "path": self.recorder.path,
+               "n_frames": meta["n_frames"]}
+        self.recorder = None
+        return out
 
     # --- array-level API --------------------------------------------------------------
 
@@ -157,10 +181,14 @@ class Session:
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
                     reward: float = 0.0, observe_only: bool = False, detections=None,
-                    odours=None, tastes=None, thermo=None, touch=None, pulses=None) -> dict:
+                    odours=None, tastes=None, thermo=None, touch=None, pulses=None,
+                    action=None) -> dict:
+        """``action``: what the caller actually did this step (its own policy's or a
+        human's), recorded as the label when a recording is on."""
         m = self.model
         if m.kind != "pc":
             raise ValueError("step / observe need a PC artifact; use body_step for a body one")
+        taken = action
         if observe_only or m.policy is None:
             feats = m.observe(frame, audio, reward, detections, odours, tastes, thermo, touch,
                               pulses)
@@ -171,6 +199,10 @@ class Session:
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"],
                    "action": info["action"], "held": info["held"]}
             out.update(state.to_dict())
+            taken = info["action"] if action is None else action
+        if self.recorder is not None:
+            self.recorder.add(frame, audio, taken)
+            out["recording"] = self.recorder.n_frames
         if m.last_probe is not None:
             out["probe"] = {"spikes": m.last_probe["spikes"].tolist(),
                             "rates": m.last_probe["rates"].tolist()}
@@ -233,7 +265,7 @@ class Session:
                                         detections=decode_detections(req),
                                         odours=decode_odours(req), tastes=req.get("tastes"),
                                         thermo=req.get("thermo"), touch=req.get("touch"),
-                                        pulses=req.get("pulses"))
+                                        pulses=req.get("pulses"), action=req.get("action"))
             if op == "set_policy":
                 m.policy = self.policy_from(req)
                 return {"ok": True, "type": m.policy.kind}
@@ -250,6 +282,14 @@ class Session:
                     m.probe(None)
                     return {"ok": True, "n": 0}
                 return {"ok": True, "n": m.probe(selection_from(req))}
+            if op == "ping":
+                return {"ok": True, "pong": True, "t": m.t}
+            if op == "hello":
+                return {"ok": True, **self.info()}
+            if op == "record":
+                if req.get("off") or not req.get("path"):
+                    return self.record_stop()
+                return self.record_start(str(req["path"]), float(req.get("fps", 10.0)))
             if op == "activity":
                 n = m.watch_activity(bool(req.get("on", True)), bool(req.get("substeps")))
                 return {"ok": True, "n": n}
@@ -262,6 +302,7 @@ class Session:
                 idx = m.select(selection_from(req))
                 return {"ok": True, "n": int(len(idx)), "indices": idx.tolist()}
             if op == "close":
+                self.record_stop()
                 return {"ok": True, "bye": True}
             return {"ok": False, "error": f"unknown op {op!r}"}
         except Exception as e:  # the protocol must survive bad input
@@ -288,21 +329,50 @@ def serve_stdio(model: Model, after_step=()) -> None:
             break
 
 
-def serve_ws(model: Model, host: str = "127.0.0.1", port: int = 8765, after_step=()) -> None:
-    """The same protocol over a WebSocket (needs the ``websockets`` package). A client
-    that sends ``{"op": "activity", "on": true}`` is also *subscribed*: it receives every
-    later step's activity as a pushed message, whichever client drove the step. That is
-    how a viewer watches a brain another program is driving."""
+def serve_ws(model: Model | None = None, host: str = "127.0.0.1", port: int = 8765,
+             after_step=(), *, loader=None, per_client: bool = False, token: str | None = None,
+             origins=None) -> None:
+    """The same protocol over a WebSocket (needs the ``websockets`` package).
+
+    ``per_client``: every connection gets its own brain from ``loader()`` (a callable
+    returning a fresh model), so several trainers or players do not share one state; the
+    default shares ``model`` between connections. ``token``: clients must present it, as
+    ``?token=...`` on the URL or as a first message ``{"op": "hello", "token": ...}``.
+    ``origins``: browser origins allowed to connect (None: any).
+
+    A client that sends ``{"op": "activity", "on": true}`` is also *subscribed*: it
+    receives every later step's activity of the session it is on as a pushed message,
+    whichever client drove the step (a viewer watching a shared brain)."""
     import asyncio
+    from urllib.parse import parse_qs, urlparse
 
     import websockets
 
-    session = Session(model, after_step)
-    subscribers: set = set()
+    if per_client and loader is None:
+        raise ValueError("per_client needs a loader() that returns a fresh model")
+    shared = None if per_client else Session(model if model is not None else loader(),
+                                             after_step)
+    subscribers: dict = {}          # session id -> set of websockets
+
+    def query_token(ws) -> str | None:
+        req = getattr(ws, "request", None)
+        path = getattr(req, "path", None) or getattr(ws, "path", "") or ""
+        return (parse_qs(urlparse(path).query).get("token") or [None])[0]
 
     async def handler(ws):
-        await ws.send(json.dumps({"ok": True, "ready": True, **session.info()}))
+        session = shared if shared is not None else Session(loader(), after_step)
+        subs = subscribers.setdefault(id(session), set())
         try:
+            given = query_token(ws)
+            if token is not None and given != token:
+                first = {} if given is not None else json.loads(await ws.recv())
+                if not (first.get("op") == "hello" and first.get("token") == token):
+                    await ws.send(json.dumps({"ok": False, "error": "unauthorised: pass "
+                                              "?token= on the URL or send {\"op\": \"hello\", "
+                                              "\"token\": ...} first"}))
+                    return
+            await ws.send(json.dumps({"ok": True, "ready": True, "per_client": per_client,
+                                      **session.info()}))
             async for msg in ws:
                 try:
                     req = json.loads(msg)
@@ -311,24 +381,34 @@ def serve_ws(model: Model, host: str = "127.0.0.1", port: int = 8765, after_step
                     continue
                 resp = session.handle(req)
                 if req.get("op") == "activity":
-                    (subscribers.add if req.get("on", True) else subscribers.discard)(ws)
+                    (subs.add if req.get("on", True) else subs.discard)(ws)
                 await ws.send(json.dumps(resp))
                 if resp.get("bye"):
                     break
                 if req.get("op") in Session.STEP_OPS and "activity" in resp:
                     push = json.dumps(resp["activity"])
-                    for other in list(subscribers):
+                    for other in list(subs):
                         if other is not ws:
                             try:
                                 await other.send(push)
                             except Exception:
-                                subscribers.discard(other)
+                                subs.discard(other)
+        except (websockets.ConnectionClosed, json.JSONDecodeError):
+            pass
         finally:
-            subscribers.discard(ws)
+            subs.discard(ws)
+            if session is not shared:
+                session.record_stop()
+                subscribers.pop(id(session), None)
 
     async def main():
-        async with websockets.serve(handler, host, port, max_size=64 * 1024 * 1024):
-            print(f"neurofly-core listening on ws://{host}:{port}", file=sys.stderr, flush=True)
+        kw = {"max_size": 64 * 1024 * 1024}
+        if origins:
+            kw["origins"] = list(origins)
+        async with websockets.serve(handler, host, port, **kw):
+            print(f"neurofly-core listening on ws://{host}:{port}"
+                  + (" (a brain per client)" if per_client else "")
+                  + (" (token required)" if token else ""), file=sys.stderr, flush=True)
             await asyncio.Future()
 
     asyncio.run(main())

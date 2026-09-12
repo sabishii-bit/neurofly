@@ -1,0 +1,184 @@
+<!doctype html>
+<!--
+  A Three.js game trains the fly, in the browser, over a WebSocket: the template for a web
+  FPS. The scene is a target on a ring; the fly's controls are keys a and d (turn) and w
+  (move); reward is how centred the target is. Evolution strategies runs in the page: each
+  candidate policy is installed with set_policy, played for an episode of step calls, and
+  scored by the game's own reward. A record button writes the session to the server as a
+  recording the Python trainers (imitate, surrogate, detect-label) accept, and save writes
+  the trained artifact.
+
+  Serve a brain (locally, or in the Docker image on a server; see docs/deploy.md):
+    neurofly build artifacts/base --brain malecns --keys w,a,d
+    neurofly-core serve artifacts/base --ws 127.0.0.1:8765 --per-client        # add --token for hosting
+  Then, from the repository root:
+    python -m http.server 8000
+    http://localhost:8000/examples/web_fps.html?ws=ws://127.0.0.1:8765&token=
+
+  The client class below mirrors NeuroFlyWS in bindings/node (which you would import in a
+  real app); it is inlined so this page has no build step.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>neurofly web FPS</title>
+  <style>
+    body { margin: 0; background: #0b0d12; color: #dde; font: 13px system-ui, sans-serif; display: flex; }
+    #game { width: 640px; height: 400px; background: #000; }
+    #panel { padding: 12px 16px; max-width: 420px; }
+    button, input { font: inherit; margin: 2px 4px 2px 0; }
+    #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; height: 220px; overflow: auto; background: #12151c; padding: 8px; }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="640" height="400"></canvas>
+  <div id="panel">
+    <div>server <input id="url" size="28" /> token <input id="token" size="10" /> <button id="connect">connect</button></div>
+    <div>
+      <button id="train" disabled>train (ES)</button>
+      <button id="play" disabled>play best</button>
+      <button id="record" disabled>record</button>
+      <button id="save" disabled>save artifact</button>
+    </div>
+    <div>episode <input id="steps" size="4" value="60" /> steps, population <input id="pop" size="3" value="8" />, sigma <input id="sigma" size="4" value="0.1" /></div>
+    <div id="log">not connected</div>
+  </div>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+
+    // --- the client (the same surface as NeuroFlyWS in bindings/node) -----------------------
+    class NeuroFlyWS {
+      constructor(url, opts = {}) { this.url = url; this.opts = opts; this.queue = []; this.info = null; }
+      connect() {
+        const url = this.opts.token ? `${this.url}?token=${encodeURIComponent(this.opts.token)}` : this.url;
+        this.ws = new WebSocket(url);
+        const ready = this.next();
+        this.ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.ok === undefined && m.indices) return; this.queue.shift()?.resolve(m); };
+        this.ws.onclose = () => { while (this.queue.length) this.queue.shift().reject(new Error("closed")); };
+        this.ws.onerror = () => { while (this.queue.length) this.queue.shift().reject(new Error("cannot connect")); };
+        return ready.then((info) => { if (!info.ok) throw new Error(info.error); this.info = info; return info; });
+      }
+      next() { return new Promise((resolve, reject) => this.queue.push({ resolve, reject })); }
+      send(req) { const p = this.next(); this.ws.send(JSON.stringify(req)); return p.then((r) => { if (!r.ok) throw new Error(r.error); return r; }); }
+      static async fromCanvas(canvas, quality = 0.8) {
+        const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        return { frame: btoa(s), width: canvas.width, height: canvas.height, format: "jpeg" };
+      }
+      step(input) { return this.send({ op: "step", ...input }); }
+      observe(input) { return this.send({ op: "observe", ...input }); }
+      setPolicy(p) { return this.send({ op: "set_policy", ...p }); }
+      save(path, name) { return this.send({ op: "save", path, name }); }
+      record(path, fps = 10) { return this.send({ op: "record", path, fps }); }
+      stopRecording() { return this.send({ op: "record", off: true }); }
+      reset() { return this.send({ op: "reset" }); }
+    }
+
+    // --- the game ----------------------------------------------------------------------------
+    const canvas = document.getElementById("game");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a2030);
+    const camera = new THREE.PerspectiveCamera(70, canvas.width / canvas.height, 0.1, 100);
+    camera.position.set(0, 1.6, 0);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.5));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x2b3340 }));
+    floor.rotation.x = -Math.PI / 2; scene.add(floor);
+    scene.add(new THREE.GridHelper(40, 40, 0x6677aa, 0x3a4560));
+    const target = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1),
+                                  new THREE.MeshStandardMaterial({ color: 0xff4040, emissive: 0x802020 }));
+    scene.add(target);
+    window.__nf = { renderer, scene, camera };            // for poking at the scene from the console
+    let yaw = 0, targetAngle = 0;
+    function placeTarget() { targetAngle = Math.random() * Math.PI * 2; target.position.set(6 * Math.sin(targetAngle), 1, -6 * Math.cos(targetAngle)); }
+    function render() { camera.rotation.y = -yaw; renderer.render(scene, camera); }
+    function reward() {                                   // 1 when the target is dead ahead
+      let d = (targetAngle - yaw) % (2 * Math.PI); if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+      return 1 - Math.abs(d) / Math.PI;
+    }
+    function applyControls(r) {                           // the fly's keys move the player
+      if (r.keys.includes("a")) yaw -= 0.08;
+      if (r.keys.includes("d")) yaw += 0.08;
+      if (r.keys.includes("w")) camera.position.z -= 0.1 * Math.cos(yaw), camera.position.x += 0.1 * Math.sin(yaw);
+    }
+    placeTarget(); render();
+
+    // --- training: evolution strategies over a linear policy ----------------------------------
+    const log = (s) => { const el = document.getElementById("log"); el.textContent += s + "\n"; el.scrollTop = el.scrollHeight; };
+    const params = new URLSearchParams(location.search);
+    document.getElementById("url").value = params.get("ws") || "ws://127.0.0.1:8765";
+    document.getElementById("token").value = params.get("token") || "";
+    let fly = null, nF = 0, nA = 0, theta = null, best = null, running = false, recording = false;
+
+    function unpack(v) {                                  // theta -> {W (nA x nF), b (nA)}
+      const W = []; for (let a = 0; a < nA; a++) W.push(Array.from(v.slice(a * nF, (a + 1) * nF)));
+      return { type: "linear", W, b: Array.from(v.slice(nA * nF)) };
+    }
+    async function episode(v, steps) {                    // returns the return of one episode
+      await fly.setPolicy(unpack(v));
+      await fly.reset(); yaw = Math.random() * Math.PI * 2; placeTarget();
+      let ret = 0;
+      for (let t = 0; t < steps && running; t++) {
+        render();
+        const r = await fly.step({ ...(await NeuroFlyWS.fromCanvas(canvas)), reward: reward() });
+        applyControls(r); ret += reward();
+      }
+      return ret / steps;
+    }
+    async function train() {
+      const steps = +document.getElementById("steps").value, pop = +document.getElementById("pop").value | 0;
+      const sigma = +document.getElementById("sigma").value, lr = 0.05, half = Math.max(1, pop >> 1);
+      let gen = 0, bestScore = -Infinity;
+      while (running) {
+        const eps = Array.from({ length: half }, () => Float64Array.from(theta, () => gaussian()));
+        const scores = [];
+        for (let i = 0; i < half && running; i++) {
+          scores.push(await episode(theta.map((x, k) => x + sigma * eps[i][k]), steps));
+          scores.push(await episode(theta.map((x, k) => x - sigma * eps[i][k]), steps));
+        }
+        if (!running) break;
+        const ranks = scores.map((s, i) => [s, i]).sort((a, b) => a[0] - b[0]).map(([, i], r) => [i, r / (scores.length - 1) - 0.5]).sort((a, b) => a[0] - b[0]).map(([, u]) => u);
+        for (let k = 0; k < theta.length; k++) {
+          let g = 0; for (let i = 0; i < half; i++) g += (ranks[2 * i] - ranks[2 * i + 1]) * eps[i][k];
+          theta[k] += lr * g / (half * sigma);
+        }
+        const top = Math.max(...scores);
+        if (top > bestScore) { bestScore = top; const i = scores.indexOf(top); best = theta.map((x, k) => x + (i % 2 ? -1 : 1) * sigma * eps[i >> 1][k]); }
+        log(`gen ${gen++}  mean ${(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(3)}  best ${bestScore.toFixed(3)}`);
+      }
+    }
+    function gaussian() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+    document.getElementById("connect").onclick = async () => {
+      try {
+        fly = new NeuroFlyWS(document.getElementById("url").value, { token: document.getElementById("token").value || undefined });
+        const info = await fly.connect();
+        nF = info.n_features; nA = info.n_actions; theta = new Float64Array(nA * nF + nA);
+        log(`connected: ${info.name}, ${info.n_neurons} neurons, controls ${info.controls.join(", ")}, ${nF} features` + (info.per_client ? ", own brain" : ", shared brain"));
+        for (const id of ["train", "play", "record", "save"]) document.getElementById(id).disabled = false;
+      } catch (e) { log(`connect failed: ${e.message}`); }
+    };
+    document.getElementById("train").onclick = async (ev) => {
+      if (running) { running = false; ev.target.textContent = "train (ES)"; return; }
+      running = true; ev.target.textContent = "stop"; await train(); ev.target.textContent = "train (ES)";
+    };
+    document.getElementById("play").onclick = async () => {
+      if (!best) { log("nothing trained yet"); return; }
+      running = true; log("playing the best policy; press train/stop to end");
+      while (running) await episode(best, 200);
+    };
+    document.getElementById("record").onclick = async (ev) => {
+      if (!recording) { const r = await fly.record("recordings/web_" + Date.now(), 10); recording = true; ev.target.textContent = "stop recording"; log(`recording to ${r.path} on the server`); }
+      else { const r = await fly.stopRecording(); recording = false; ev.target.textContent = "record"; log(`recorded ${r.n_frames} frames; train on it with: neurofly imitate ${r.path} ...`); }
+    };
+    document.getElementById("save").onclick = async () => {
+      if (best) await fly.setPolicy(unpack(best));
+      const r = await fly.save("artifacts/web_fps", "web-fps"); log(`saved ${r.path} on the server`);
+    };
+  </script>
+</body>
+</html>

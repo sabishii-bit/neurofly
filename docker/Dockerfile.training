@@ -1,0 +1,26 @@
+# The training stack in a container: build artifacts, train on recordings that a hosted
+# brain wrote, export, and serve too if you like. Python 3.10 because the body's
+# dependencies pin numpy 1.26; the detectors' extra is included, the body's is not (add
+# `training[flybody]` if you run body tasks here; it needs the MuJoCo wheels).
+#
+#   docker build -f docker/Dockerfile.training -t neurofly-training .
+#   docker run -v ./data:/data -v ./artifacts:/artifacts -v ./runs:/runs neurofly-training \
+#       neurofly imitate /data/recordings/web1 --brain malecns --run-name web1
+#
+# NEUROFLY_DATA points the connectome loader at the mounted data directory
+# (`neurofly download` once into it, about 570 MB).
+FROM python:3.10-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/neurofly
+COPY core/ core/
+COPY training/ training/
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    "torch>=2.2" torchvision && pip install --no-cache-dir ./core[ws,grpc,video] ./training[detect]
+
+ENV NEUROFLY_DATA=/data/malecns
+VOLUME ["/data", "/artifacts", "/runs"]
+WORKDIR /work
+CMD ["neurofly", "--help"]

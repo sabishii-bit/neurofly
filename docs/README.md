@@ -14,6 +14,7 @@ Python; the result is an artifact that runs from any language.
 | [Training](training.md) | choose between PPO, evolution strategies, imitation and plasticity; understand run directories |
 | [Runtime and artifacts](runtime.md) | export a run, run it without the training stack, use it from Node, Rust, or anything else |
 | [From your own project](from-your-project.md) | step by step: neurofly as a dependency of a TypeScript, Rust, Go or Python project |
+| [Hosting the brain](deploy.md) | a brain in a Docker container on a server, tokens, a brain per client, recordings and training in a container |
 | [Extending](extending.md) | write a `Task`, swap a source, add an encoder or a detector backend, use the Python API directly |
 | [Command reference](cli.md) | every `neurofly` and `neurofly-core` command and option |
 | [Performance](performance.md) | what a step costs, the two brain backends, GPU |

@@ -69,9 +69,32 @@ await fly.close();
 ```
 
 `examples/node_consumer.js` drives a served brain from a video; `examples/node_train_es.js`
-trains one with evolution strategies entirely in JavaScript. A browser cannot spawn a
-process: run `neurofly-core serve artifacts/base --ws 127.0.0.1:8765` and speak the same
-JSON over a WebSocket (`examples/brain_viewer.html` is a browser client).
+trains one with evolution strategies entirely in JavaScript.
+
+### Browsers, and brains on another machine
+
+A browser cannot spawn a process, and a deployed web app should not have to: the same
+package exports `NeuroFlyWS`, a client for a brain served over a WebSocket, locally
+(`neurofly-core serve artifacts/base --ws 127.0.0.1:8765`) or in a container on a server
+([Hosting the brain](deploy.md)). It runs in browsers and in Node alike:
+
+```ts
+import { NeuroFlyWS } from "neurofly";                 // no Node imports in this class
+
+const fly = new NeuroFlyWS("wss://brain.example/", { token: "secret" });
+const info = await fly.connect();                       // own brain per connection when the server says so
+const frame = await NeuroFlyWS.fromCanvas(canvas);      // a JPEG of your game's canvas
+const r = await fly.step({ ...frame, reward: score, odours: { health: hp } });
+
+await fly.record("recordings/session1", 10);            // the server writes a recording ...
+await fly.observe({ ...frame, action: humanAction });   // ... with the human's action as the label
+await fly.stopRecording();                              // ... for neurofly imitate / surrogate
+await fly.setPolicy({ type: "linear", W, b });
+await fly.save("artifacts/trained");                    // on the server's disk
+```
+
+`examples/web_fps.html` is a Three.js game that trains the fly this way, entirely in the
+page, with a record button.
 
 ## Rust
 
@@ -150,6 +173,23 @@ subprocess.
 * **Reward.** `reward` on `observe` or `step` is dopamine: it drives the PAM neurons when
   positive and PPL1 when negative (if the artifact was built with those options) and feeds
   plasticity.
+
+## Training from your side, in full
+
+Three ways, from cheapest to strongest:
+
+1. **Your optimiser over the policy.** `observe` gives features, `set_policy` installs a
+   linear or MLP policy, `save` writes the artifact. Evolution strategies needs nothing but
+   arithmetic (`examples/node_train_es.js`, `examples/web_fps.html`); a gradient method
+   trains an MLP on features in your own framework and hands its layers over.
+2. **The brain's own learning.** Pass `reward` on every step. With an artifact built with
+   `--plasticity` and `--dopamine-punish` / `--dopamine-reward`, the mushroom body learns
+   inside the served process.
+3. **The Python trainers on your session.** Start a recording with the `record` op, send
+   your frames (and, on `observe`, the `action` a human took), stop it, and the directory
+   the server wrote is what `neurofly imitate`, `neurofly surrogate` (training through the
+   brain, Python only) and `neurofly detect-label` take. `neurofly export` gives you the
+   artifact back.
 
 ## Building the artifact somewhere else
 

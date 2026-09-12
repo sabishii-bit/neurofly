@@ -310,6 +310,13 @@ the fly going when the keyboard focus leaves the window it started on; by defaul
 | `serve <artifact>` | JSON lines over stdio; `--ws HOST:PORT` for a WebSocket; `--grpc HOST:PORT` for gRPC; `--device`; the experiment options |
 | `run <artifact>` | capture the screen and drive keyboard, mouse and gamepad; the experiment options |
 
+### serve
+
+`--ws HOST:PORT` (WebSocket) or `--grpc HOST:PORT`, else JSON lines on stdio. WebSocket
+hosting options: `--per-client` (a fresh brain for every connection), `--token` (clients
+must present it; default from `NEUROFLY_TOKEN`), `--origins a,b` (browser origins
+allowed). Plus `--device` and the experiment options. See [Hosting the brain](deploy.md).
+
 ### run
 
 | Option | Default | Meaning |

@@ -1,0 +1,29 @@
+# The runtime, hosted: serves an artifact over a WebSocket (and gRPC) with a brain per
+# client. No training stack, no connectome data; the artifact is mounted in.
+#
+#   docker build -f docker/Dockerfile.core -t neurofly-core .
+#   docker run -p 8765:8765 -e NEUROFLY_TOKEN=secret \
+#       -v ./artifacts/myapp:/artifact:ro -v ./data/recordings:/recordings neurofly-core
+#
+# Clients connect to ws://host:8765/?token=secret. Recordings a client asks for
+# ({"op": "record", "path": "/recordings/web1"}) land in the mounted volume, where the
+# training image (Dockerfile.training) can pick them up.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/neurofly
+COPY core/ core/
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    "torch>=2.2" && pip install --no-cache-dir ./core[ws,grpc,video]
+
+ENV NEUROFLY_ARTIFACT=/artifact \
+    NEUROFLY_TOKEN= \
+    NEUROFLY_ORIGINS= \
+    NEUROFLY_WS=0.0.0.0:8765
+EXPOSE 8765
+VOLUME ["/artifact", "/recordings"]
+
+# --origins is only applied when NEUROFLY_ORIGINS is set; --token reads NEUROFLY_TOKEN itself
+CMD ["sh", "-c", "exec neurofly-core serve \"$NEUROFLY_ARTIFACT\" --ws \"$NEUROFLY_WS\" --per-client ${NEUROFLY_ORIGINS:+--origins \"$NEUROFLY_ORIGINS\"}"]

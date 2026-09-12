@@ -21,9 +21,12 @@ can use. neurofly-kit is that boilerplate, done once, behind three interfaces:
 * **The artifact**, a directory of a manifest and flat arrays with no Python objects, which
   is the whole trained brain and its encoders. It is the thing you ship.
 * **The runtime and its bindings**: `neurofly-core` serves an artifact over stdio, WebSocket
-  or gRPC, and the TypeScript, Rust and Go bindings wrap that, so the project that uses the
-  fly can be written in whatever language it is written in.
-  [Using neurofly from your own project](docs/from-your-project.md) is the step by step.
+  or gRPC, locally or from a container on a server (a brain per client, a token, recordings
+  written for the trainers), and the TypeScript (subprocess and browser), Rust and Go
+  bindings wrap that, so the project that uses the fly can be written in whatever language
+  it is written in and run wherever it runs.
+  [Using neurofly from your own project](docs/from-your-project.md) is the step by step and
+  [Hosting the brain](docs/deploy.md) the deployment.
 
 It is a template as much as a library: the pieces are meant to be replaced. Write a `Task`
 for your game, swap the detector, add a sense, point the readout at other neurons.

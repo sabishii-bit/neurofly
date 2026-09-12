@@ -4,6 +4,7 @@
     neurofly-core validate artifacts/myapp                 # check the files
     neurofly-core serve    artifacts/myapp                 # JSON lines over stdio
     neurofly-core serve    artifacts/myapp --ws 127.0.0.1:8765
+    neurofly-core serve    artifacts/myapp --ws 0.0.0.0:8765 --per-client --token secret  # hosted
     neurofly-core serve    artifacts/myapp --grpc 127.0.0.1:50051
     neurofly-core run      artifacts/myapp --window "My App" --dry-run   # drive the PC itself
     neurofly-core run      artifacts/myapp --region 0,0,800,600 --audio loopback \
@@ -36,22 +37,31 @@ def cmd_validate(args):
 
 
 def cmd_serve(args):
+    import os
     from neurofly_core.artifact import load_model
     from neurofly_core.server import serve_stdio, serve_ws
-    model = load_model(args.artifact, device=args.device)
+
+    def make():
+        m = load_model(args.artifact, device=args.device)
+        for line in apply_experiments(m, args):
+            print(line, file=sys.stderr, flush=True)
+        return m
+
+    model = make()
     print(model.describe(), file=sys.stderr, flush=True)
-    for line in apply_experiments(model, args):
-        print(line, file=sys.stderr, flush=True)
     sinks = activity_sinks(model, args, fps=1000.0 / model.config.brain_ms)
     for line in sinks.describe():
         print(line, file=sys.stderr, flush=True)
+    token = args.token if args.token is not None else os.environ.get("NEUROFLY_TOKEN") or None
+    origins = [o.strip() for o in args.origins.split(",") if o.strip()] if args.origins else None
     try:
         if args.grpc:
             from neurofly_core.rpc.server import serve_grpc
             serve_grpc(model, args.grpc, after_step=[sinks.record])
         elif args.ws:
             host, _, port = args.ws.rpartition(":")
-            serve_ws(model, host or "127.0.0.1", int(port), after_step=[sinks.record])
+            serve_ws(model, host or "127.0.0.1", int(port), after_step=[sinks.record],
+                     loader=make, per_client=args.per_client, token=token, origins=origins)
         else:
             serve_stdio(model, after_step=[sinks.record])
     finally:
@@ -154,6 +164,13 @@ def main(argv=None):
     s.add_argument("artifact")
     s.add_argument("--ws", default=None, metavar="HOST:PORT", help="WebSocket instead of stdio")
     s.add_argument("--grpc", default=None, metavar="HOST:PORT", help="gRPC instead of stdio")
+    s.add_argument("--per-client", action="store_true",
+                   help="WebSocket: a fresh brain for every connection instead of one shared")
+    s.add_argument("--token", default=None,
+                   help="WebSocket: clients must present this (?token= or a hello message); "
+                        "default: the NEUROFLY_TOKEN environment variable")
+    s.add_argument("--origins", default=None,
+                   help="WebSocket: comma-separated browser origins allowed (default: any)")
     s.add_argument("--device", default="cpu")
     add_experiment_args(s)
     s.set_defaults(fn=cmd_serve)

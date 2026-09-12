@@ -215,3 +215,6 @@ export class NeuroFly {
 }
 
 export default NeuroFly;
+
+export { NeuroFlyWS } from "./ws";
+export type { WSOptions } from "./ws";

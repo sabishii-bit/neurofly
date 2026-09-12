@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 *.mp4
 .venv
+.playwright-mcp/
 
 # build / tooling
 build/
@@ -37,3 +38,7 @@ bindings/node/package-lock.json
 /.coverage
 /htmlcov/
 /*.pt
+
+# Playwright MCP snapshots, logs and screenshots
+/.playwright-mcp/
+/*.png

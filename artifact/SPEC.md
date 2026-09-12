@@ -213,7 +213,9 @@ model (`neurofly export-body --mjcf`) assembles the same vector from its own sim
 
 `neurofly-core serve <artifact>` speaks JSON lines: one request per line on stdin, one
 response per line on stdout, logs on stderr. `--ws host:port` serves the same over a
-WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
+WebSocket; with `--per-client` every connection gets its own brain, with `--token` the
+client must pass `?token=` on the URL or send a `hello` first, and `--origins` restricts
+browsers. The first line written is `{"ok": true, "ready": true, "per_client": bool, ...info}`.
 
 | Request | Response |
 |---|---|
@@ -233,6 +235,9 @@ WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
 | `{"op": "positions"}` | `{"ok": true, "n", "unit", "positions": [[x, y, z], ...] or null, "known": [...], "superclass": [...], "populations": {name: [indices]}}` |
 | `{"op": "clear"}` | undoes every stimulation and silencing (the probe stays) |
 | `{"op": "select", <selection>}` | `{"ok": true, "n", "indices"}` |
+| `{"op": "record", "path": dir, "fps"?: 10}` / `{"op": "record", "off": true}` | the runtime writes every later step's frame, sound and action to a recording directory in the `neurofly record` format (video.mp4, actions.npy, meta.json, audio.wav), for the Python trainers; step replies carry `"recording": n_frames` meanwhile. `action` on `observe` supplies the label (a human's action); `step` records the policy's own |
+| `{"op": "ping"}` | `{"ok": true, "pong": true, "t"}` |
+| `{"op": "hello", "token"?: ...}` | the info again; the first message when a served brain requires a token |
 | `{"op": "close"}` | `{"ok": true, "bye": true}` and the process exits |
 
 A `<selection>` is exactly one of `"indices": [...]`, `"ids": [...]` (connectome ids),

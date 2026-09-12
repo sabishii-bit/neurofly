@@ -1,0 +1,35 @@
+# A hosted brain and, on demand, the training stack next to it.
+#
+#   docker compose -f docker/compose.yaml up brain                       # serve artifacts/myapp
+#   docker compose -f docker/compose.yaml run --rm training \
+#       neurofly imitate /data/recordings/web1 --brain malecns --run-name web1
+#   docker compose -f docker/compose.yaml run --rm training \
+#       neurofly export /runs/web1 /artifacts/myapp-v2
+#
+# Set NEUROFLY_TOKEN in the environment (or a .env file) and give the same token to the
+# web app's client. Put a TLS-terminating reverse proxy (Caddy, nginx, a cloud load
+# balancer) in front of port 8765 for a public deployment: wss:// is plain WebSocket
+# behind it.
+services:
+  brain:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.core
+    ports: ["8765:8765"]
+    environment:
+      NEUROFLY_TOKEN: ${NEUROFLY_TOKEN:-}
+      NEUROFLY_ORIGINS: ${NEUROFLY_ORIGINS:-}
+    volumes:
+      - ../artifacts/myapp:/artifact:ro
+      - ../data/recordings:/recordings
+    restart: unless-stopped
+
+  training:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.training
+    profiles: ["training"]
+    volumes:
+      - ../data:/data
+      - ../artifacts:/artifacts
+      - ../runs:/runs
