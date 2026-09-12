@@ -8,7 +8,7 @@ Starting points to copy into your own project. Nothing here is imported by the p
 | `workbench.html` | the three-panel workbench: what the fly saw, the brain atlas lit by its activity, the body, on one timeline with play, scrub, speed and loop; takes neurofly's own files or any replay-format model output |
 | `web_fps.html` | a Three.js game that trains the fly in the browser over a WebSocket (evolution strategies in the page), records the session for the Python trainers, and saves the artifact; the template for a web game against a local or hosted brain |
 | `brain_viewer.html` | the brain as a point cloud lit by its spikes, from `--activity-out` files or an `--activity-ws` / `serve --ws` stream; synapses from an artifact |
-| `three_viewer.html` | the exported fly body animated from `watch --poses` files or a `--pose-ws` stream |
+| `three_viewer.html` | the exported fly body animated from `watch --poses` files, a `--pose-ws` stream, or `neurofly body-serve` (then with buttons that drive the fly) |
 | `node_consumer.js`, `node_train_es.js` | driving and training a served brain from Node |
 
 Run one against a window, without touching anything, to check that the reward reads what

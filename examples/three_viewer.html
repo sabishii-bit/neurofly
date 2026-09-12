@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
   Shows the exported fly body in Three.js, animated from a pose stream: a poses.json file
-  written by `neurofly watch --poses`, or live over a WebSocket from
-  `neurofly watch --pose-ws 127.0.0.1:8766`.
+  written by `neurofly watch --poses`, live over a WebSocket from
+  `neurofly watch --pose-ws 127.0.0.1:8766`, or from `neurofly body-serve` (ws://127.0.0.1:8767),
+  which also gives buttons to drive the fly (and window.__nf.send({op: ...}) from the console).
 
     neurofly export-body --out assets/fly.glb
     neurofly watch --task forward --brain malecns --policy zero --poses assets/poses.json
@@ -21,12 +22,25 @@
   <style>
     body { margin: 0; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
     #hud { position: fixed; left: 12px; top: 10px; }
+    #panel { position: fixed; left: 12px; top: 34px; display: none; gap: 6px; flex-wrap: wrap; max-width: 420px; }
+    #panel button { background: #223; color: #ddd; border: 1px solid #446; border-radius: 4px; padding: 4px 10px; cursor: pointer; font: inherit; }
+    #panel button:hover { background: #334; }
+    #panel span { color: #99a; align-self: center; }
     canvas { display: block; }
   </style>
 </head>
 <body>
   <div id="credit" style="position:fixed;right:12px;bottom:8px;font-size:11px;color:#889;pointer-events:none">MaleCNS v1.0 connectome, CC BY 4.0 (FlyEM / HHMI Janelia, MRC LMB, Google Research) &middot; neurofly</div>
   <div id="hud">loading...</div>
+  <div id="panel">
+    <button data-op='{"op":"gait","steps":1000}'>walk (gait, 2 s)</button>
+    <button data-op='{"op":"step","steps":250,"legs":{"T1L":{"femur":0.5,"tibia":-0.3},"T1R":{"femur":0.5,"tibia":-0.3}}}'>raise front legs</button>
+    <button data-op='{"op":"replay","source":"gait","steps":500}'>gait, no physics</button>
+    <button data-op='{"op":"replay","source":"real"}'>real walking</button>
+    <button data-op='{"op":"step","steps":250,"brain":true}' data-needs="brain">brain acts</button>
+    <button data-op='{"op":"reset"}'>reset</button>
+    <span id="status"></span>
+  </div>
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
@@ -94,13 +108,34 @@
       }
     }
 
-    let frames = null, fps = 50, t = 0, last = performance.now();
+    let frames = null, fps = 50, t = 0, last = performance.now(), lastOp = null;
     window.__nf = { nodes, applyPose, get bodies() { return bodies; }, get t() { return t; }, get frames() { return frames; } };
     if (wsUrl) {
       const ws = new WebSocket(wsUrl);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.bodies) { bodies = msg.bodies; fps = msg.fps; hud.textContent = `live: ${bodies.length} bodies at ${fps} fps from ${wsUrl}`; }
+        if (msg.bodies) {
+          bodies = msg.bodies; fps = msg.fps; hud.textContent = `live: ${bodies.length} bodies at ${fps} fps from ${wsUrl}`;
+          if (msg.kind === "body-server") {           // neurofly body-serve: the fly can be driven from here
+            const panel = document.getElementById("panel"), status = document.getElementById("status");
+            panel.style.display = "flex";
+            hud.textContent += ` (body server, task ${msg.task}${msg.brain ? ", brain " + msg.brain : ""})`;
+            for (const b of panel.querySelectorAll("button")) {
+              if (b.dataset.needs === "brain" && !msg.brain_has_policy) b.disabled = true;
+              b.onclick = () => { status.textContent = "running..."; lastOp = b.dataset.op; ws.send(lastOp); };
+            }
+            window.__nf.send = (req) => ws.send(JSON.stringify(req));
+          }
+        }
+        else if (msg.ok !== undefined) {                // a reply to a button (replies carry a pose too)
+          const status = document.getElementById("status");
+          status.textContent = msg.ok ? (msg.steps !== undefined ? `t=${msg.t}, ${msg.steps} steps${msg.done ? ", fell" : ""}` : "done") : msg.error;
+          if (msg.pose) applyPose(msg.pose);
+          if (!msg.ok && /episode over/.test(msg.error) && lastOp) {     // it fell: start over and retry
+            status.textContent = "fell; resetting...";
+            ws.send(JSON.stringify({ op: "reset" })); ws.send(lastOp); lastOp = null;
+          }
+        }
         else if (msg.pose) applyPose(msg.pose);
       };
       ws.onclose = () => { hud.textContent += " (disconnected)"; };

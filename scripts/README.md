@@ -3,6 +3,7 @@
 | Script | What it does |
 |---|---|
 | `test.ps1` / `test.sh` | run the test suite; arguments go to pytest (`-k body`, `--cov`, a path) |
+| `demo.py live` | the fly hosted by `neurofly body-serve`, driven from buttons in the viewer (walk, raise legs, real walking, reset) |
 | `demo.py body` | the fly's limbs cycling a tripod gait in the Three.js viewer (`--walk physics` runs it through the dynamics instead; `--walk real` plays a real fly's walking from flybody's dataset, downloaded on first use) |
 | `demo.py brain` | the brain atlas lit by a run's activity |
 | `demo.py workbench` | what the fly saw, the brain and the body on one timeline |

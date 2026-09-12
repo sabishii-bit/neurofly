@@ -1,6 +1,7 @@
 """Open the 3D demos in a browser, building what they need first.
 
     python scripts/demo.py body        the fly cycling a tripod gait, in the Three.js viewer
+    python scripts/demo.py live        the fly hosted by body-serve, driven from viewer buttons
     python scripts/demo.py brain       the brain atlas lit by a run's activity
     python scripts/demo.py workbench   what the fly saw, the brain and the body on one timeline
     python scripts/demo.py web-fps     the Three.js game training a served brain in the page
@@ -120,7 +121,7 @@ def rel(path: str) -> str:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("demo", choices=["body", "brain", "workbench", "web-fps", "all"])
+    p.add_argument("demo", choices=["body", "live", "brain", "workbench", "web-fps", "all"])
     p.add_argument("--brain", default=None, choices=["malecns", "toy"])
     p.add_argument("--steps", type=int, default=600, help="body: control steps of gait (500/s)")
     p.add_argument("--walk", default="gait", choices=["gait", "physics", "real"],
@@ -137,6 +138,17 @@ def main():
         b = ensure_body(args)
         serve(f"examples/three_viewer.html?glb={rel(b['glb'])}&poses={rel(b['poses'])}",
               args.no_open, args.port)
+    elif args.demo == "live":
+        glb = os.path.join(ASSETS, "fly.glb")
+        if args.rebuild or not os.path.exists(glb):
+            run("export-body", "--out", glb)
+        proc = subprocess.Popen([sys.executable, "-m", "neurofly_training", "body-serve",
+                                 "--ws", "127.0.0.1:8767"], cwd=ROOT)
+        try:
+            serve(f"examples/three_viewer.html?glb={rel(glb)}&ws=ws://127.0.0.1:8767",
+                  args.no_open, args.port)
+        finally:
+            proc.terminate()
     elif args.demo == "brain":
         br = ensure_brain(args)
         serve(f"examples/brain_viewer.html?activity={rel(br['activity'])}", args.no_open, args.port)

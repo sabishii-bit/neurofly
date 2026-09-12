@@ -11,6 +11,9 @@ observation is the flattened dm_control observable dict: joint positions and vel
 touch sensors, gyro, accelerometer and so on; the wrapper remembers where each lives so the
 sensory encoder can find them. A control step is 2 ms.
 
+`neurofly body-serve` hosts the same environment and takes actions over JSON from any
+language, pushing every pose to viewers; see [runtime.md](runtime.md#the-body-as-a-server).
+
 ## Tasks
 
 | Task | What it is | Reward | Ends when |

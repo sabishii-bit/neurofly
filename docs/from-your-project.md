@@ -96,6 +96,23 @@ await fly.save("artifacts/trained");                    // on the server's disk
 `examples/web_fps.html` is a Three.js game that trains the fly this way, entirely in the
 page, with a record button.
 
+### The body from TypeScript
+
+The MuJoCo fly can be hosted the same way (`neurofly body-serve`, [runtime.md](runtime.md#the-body-as-a-server))
+and driven with `NeuroFlyBody`, in a browser or in Node, while the viewer shows it:
+
+```ts
+import { NeuroFlyBody } from "neurofly";
+
+const body = new NeuroFlyBody("ws://127.0.0.1:8767", { onPose: (p) => animate(p.pose) });
+const info = await body.connect();                       // info.actuators, info.legs, info.bodies, ...
+await body.step({ legs: { T1L: { coxa: 0.4, femur: 0.2 } }, steps: 20 });   // per-leg joints
+await body.gait({ steps: 500, stride_hz: 2 });           // the tripod gait through the physics
+await body.replay("real");                               // a real fly's walking, kinematic
+const r = await body.step({ brain: true, steps: 250 });  // the served artifact's brain acts
+await body.reset();
+```
+
 ## Rust
 
 ```toml
@@ -153,6 +170,9 @@ state, info = model.step(frame, audio, detections=dets, odours={"health": 0.8})
 ```
 
 ## Any other language
+
+The body too: `neurofly body-serve --stdio` speaks JSON lines, `--ws` a WebSocket, with the
+requests listed in [runtime.md](runtime.md#the-body-as-a-server).
 
 Start `neurofly-core serve <artifact>` and write one JSON object per line to its stdin;
 read one per line from its stdout. The first line it writes is the `info`. The whole

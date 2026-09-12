@@ -311,6 +311,39 @@ vector the artifact describes (`obs_keys` and `obs_slices` in the manifest), cal
 `body_step`, and applies the returned actuator commands. Python consumers do the same with
 `flybody` and `neurofly_core.BodyModel`.
 
+### The body as a server
+
+When you would rather not run MuJoCo yourself, `neurofly body-serve` hosts it, next to a
+brain if you give it one, and any language drives it over JSON (a WebSocket, or JSON lines
+on stdin/stdout with `--stdio`):
+
+```powershell
+neurofly body-serve                                    # ws://127.0.0.1:8767, task forward
+neurofly body-serve --artifact artifacts/walk          # the artifact's brain can act
+neurofly body-serve --ws 0.0.0.0:8767 --token secret   # on a server (or the Docker image)
+```
+
+One request, one response; every response carries the current pose of every body, and
+every WebSocket client is pushed `{"t": n, "pose": [...]}` for each rendered frame of each
+step, whoever drove it, so `examples/three_viewer.html?glb=../assets/fly.glb&ws=ws://127.0.0.1:8767`
+shows the fly live, with buttons to walk it, while your program controls it:
+
+| Request | What it does |
+|---|---|
+| `{"op": "hello"}` | task, actuator names in action order, observation layout, body names, the standing-pose action |
+| `{"op": "reset", "task"?: "ball", "seed"?: 1}` | a fresh episode |
+| `{"op": "step", "steps": 20, "legs": {"T1L": {"coxa": 0.4, "femur": 0.2}}}` | run control steps (2 ms each) with an action: per-leg joint offsets from the standing pose (`claw` is the adhesion), named `actuators`, the full 59-entry `action`, or `"brain": true` for the loaded brain's choice; returns `obs`, `reward`, `done`, `pose`, `root`, `action` |
+| `{"op": "gait", "steps": 500, "stride_hz": 2}` | the open-loop tripod gait through the physics |
+| `{"op": "set_pose", "joints": {"coxa_T1_left": 0.9}}` | joints where you say, no physics (`qpos` for all of them) |
+| `{"op": "replay", "source": "real"}` | a joint trajectory played kinematically: `gait`, or `real` (flybody's walking dataset, `neurofly body-replay --download`) |
+| `{"op": "observe"}`, `{"op": "frame", "width": 320, "height": 240}` | the observation and pose without stepping; a rendered PNG (base64) |
+| `{"op": "poses", "on": false}` | stop the pushed poses on this connection (a controller need not watch) |
+
+Requests pace to real time so a viewer sees motion as it happens; `"realtime": false` on a
+request (or `--no-realtime`) runs as fast as the physics allows, for training loops. The
+Node package's `NeuroFlyBody` wraps every request (`bindings/node/src/body.ts`);
+`bindings/node/test_body.js` drives a served fly end to end.
+
 To only watch: `examples/three_viewer.html` loads the `.glb` in Three.js and animates it from
 a pose stream, either recorded or live:
 

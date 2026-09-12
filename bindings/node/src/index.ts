@@ -218,3 +218,5 @@ export default NeuroFly;
 
 export { NeuroFlyWS } from "./ws";
 export type { WSOptions } from "./ws";
+export { NeuroFlyBody } from "./body";
+export type { BodyInfo, BodyOptions, Pose, StepInput as BodyStepInput, StepResult as BodyStepResult, GaitInput, Leg, LegJoint } from "./body";

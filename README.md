@@ -84,7 +84,8 @@ for your game, swap the detector, add a sense, point the readout at other neuron
 * **The body elsewhere**: body runs export as artifacts too (observation in, 59 actuators
   out, served over JSON or gRPC); `neurofly export-body` writes the fly as a glTF and, with
   `--mjcf`, the complete MuJoCo model for any MuJoCo build; `watch --poses` or `--pose-ws`
-  feed `examples/three_viewer.html`, recorded or live.
+  feed `examples/three_viewer.html`, recorded or live; `neurofly body-serve` hosts the body
+  itself and takes actions over JSON from any language, poses pushed to viewers.
 * **Deployment**: `neurofly export` writes an artifact (a manifest plus flat binary arrays,
   no Python objects); `neurofly-core` loads it and either drives the PC itself (keyboard,
   mouse, a virtual gamepad) or serves a JSON-lines or gRPC protocol that the Node, Rust and
