@@ -27,7 +27,10 @@ dependencies = [
 
 [project.optional-dependencies]
 # the MuJoCo fly body (not on PyPI); locally an editable checkout next door is used
-flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
+flybody = [
+    "flybody @ git+https://github.com/TuragaLab/flybody.git",
+    "h5py",                   # its walking imitation dataset (body-replay --real)
+]
 # reading numbers off the screen for reward (also needs a Tesseract install)
 ocr = ["pytesseract"]
 # object detectors: open-vocabulary (transformers), fine-tuning (torchvision), ONNX export

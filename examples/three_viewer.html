@@ -71,6 +71,10 @@
     const key = (name) => name.replace(/\s/g, "_").replace(/[^\w-]/g, "");
     const q = new THREE.Quaternion();
     let bodies = [];
+    // the camera follows the thorax (a real trajectory walks off across the floor); ?follow=0 pins it
+    const follow = params.get("follow") !== "0";
+    const anchor = new THREE.Vector3(), delta = new THREE.Vector3();
+    let anchored = false;
     function applyPose(row) {
       for (let i = 0; i < bodies.length; i++) {
         const node = nodes.get(key(bodies[i]));
@@ -79,6 +83,14 @@
         node.position.set(row[o], row[o + 1], row[o + 2]);
         q.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]);   // (x, y, z, w) from (w, x, y, z)
         node.quaternion.copy(q);
+      }
+      const thorax = nodes.get(key("walker/thorax"));
+      if (follow && thorax) {
+        zUp.updateMatrixWorld(true);
+        thorax.getWorldPosition(delta);
+        if (anchored) { delta.sub(anchor); camera.position.add(delta); controls.target.add(delta); }
+        else { controls.target.copy(delta); anchored = true; }
+        thorax.getWorldPosition(anchor);
       }
     }
 

@@ -7,8 +7,8 @@ Two sources of joint trajectories:
   the pattern says. This is for checking the body model and the viewers.
 * ``real_walking_qpos``: a real fly's walking, from flybody's walking imitation dataset
   (motion capture of Drosophila, resampled to the model's joints). Download it once with
-  ``flybody.download_data.figshare_download("walking-imitation-dataset", "data/flybody-data")``
-  (it is large); then any trajectory in it plays through the model.
+  ``neurofly body-replay --download`` (3 GB, resumable); then any trajectory in it plays
+  through the model.
 
 ``play`` sets the joints frame by frame, records the world pose of every body and,
 optionally, renders a video:

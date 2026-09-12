@@ -320,6 +320,9 @@ neurofly watch runs/walk1 --pose-ws 127.0.0.1:8766                              
 python -m http.server 8000   # then examples/three_viewer.html?glb=../assets/fly.glb&ws=ws://127.0.0.1:8766
 ```
 
+The camera follows the thorax, so a fly that walks off stays in view; add `&follow=0` to pin
+it. The same `.glb` and pose files feed the body panel of `examples/workbench.html`.
+
 The live stream sends a header with the body names, then every body's world position (cm)
 and quaternion per rendered frame, the same layout as `poses.json`. The viewer rotates from
 MuJoCo's z-up to y-up and sets each node's transform directly.

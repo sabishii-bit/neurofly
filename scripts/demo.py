@@ -68,8 +68,9 @@ def ensure_body(args) -> dict:
             from neurofly_training.cli.body_replay import find_walking_dataset
             if not find_walking_dataset():
                 run("body-replay", "--download")
-            run("body-replay", "--index", str(getattr(args, "index", 0)), "--poses", poses,
-                "--video", video)
+            index = getattr(args, "index", None)
+            run("body-replay", *(["--index", str(index)] if index is not None else ["--real"]),
+                "--poses", poses, "--video", video)
         else:
             run("body-replay", "--gait", "--steps", str(args.steps), "--poses", poses,
                 "--video", video)
@@ -125,7 +126,8 @@ def main():
     p.add_argument("--walk", default="gait", choices=["gait", "physics", "real"],
                    help="body: the tripod gait as joint angles (default), the gait through "
                         "the physics, or a real fly's walking (downloads flybody's dataset)")
-    p.add_argument("--index", type=int, default=0, help="body --walk real: which trajectory")
+    p.add_argument("--index", type=int, default=None,
+                   help="body --walk real: which trajectory (default: the longest)")
     p.add_argument("--rebuild", action="store_true")
     p.add_argument("--no-open", action="store_true")
     p.add_argument("--port", type=int, default=0, help="static server port (default: any free)")

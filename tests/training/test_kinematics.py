@@ -58,14 +58,20 @@ def test_body_replay_cli(tmp_path, monkeypatch, capsys):
     body_replay.main()
     assert "tripod gait, 60 steps: 6 frames" in capsys.readouterr().out
     monkeypatch.setattr(body_replay, "find_walking_dataset", lambda *a, **k: None)
-    monkeypatch.setattr(sys, "argv", ["neurofly-test", "--index", "0"])
-    with pytest.raises(SystemExit):
-        body_replay.main()
+    for argv in (["--index", "0"], ["--real"]):
+        monkeypatch.setattr(sys, "argv", ["neurofly-test", *argv])
+        with pytest.raises(SystemExit):
+            body_replay.main()
 
 
-@pytest.mark.skipif(not os.environ.get("FLYBODY_WALKING_H5"),
-                    reason="set FLYBODY_WALKING_H5 to a walking imitation dataset")
 def test_real_walking_dataset():
+    """A real trajectory has one row per 2 ms control step and the model's full qpos."""
     from neurofly_training.body.kinematics import real_walking_qpos
-    q, fps = real_walking_qpos(os.environ["FLYBODY_WALKING_H5"], 0)
-    assert q.ndim == 2 and fps > 0
+    from neurofly_training.cli.body_replay import find_walking_dataset
+    path = os.environ.get("FLYBODY_WALKING_H5") or find_walking_dataset()
+    if not path:
+        pytest.skip("no walking imitation dataset (neurofly body-replay --download)")
+    from neurofly_training.cli.body_replay import longest_trajectory
+    q, fps = real_walking_qpos(path, longest_trajectory(path))
+    assert q.ndim == 2 and q.shape[1] == 109 and fps == 500.0 and len(q) > 100
+    assert np.abs(q[1:, 7:] - q[:-1, 7:]).max() < 0.5           # joints move smoothly

@@ -170,7 +170,18 @@
       else document.getElementById("bodynote").textContent = "body loaded; add ?poses= to animate";
       const quat = new THREE.Quaternion();
       const key = (name) => name.replace(/\s/g, "_").replace(/[^\w-]/g, "");   // GLTFLoader sanitises names
-      window.__applyPose = (row) => { for (let i = 0; i < bodies.length; i++) { const node = nodes.get(key(bodies[i])); if (!node) continue; const o = i * 7; node.position.set(row[o], row[o + 1], row[o + 2]); quat.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]); node.quaternion.copy(quat); } };
+      const anchor = new THREE.Vector3(), delta = new THREE.Vector3(); let anchored = false;
+      const follow = q.get("follow") !== "0";                                  // the camera follows the thorax
+      window.__applyPose = (row) => {
+        for (let i = 0; i < bodies.length; i++) { const node = nodes.get(key(bodies[i])); if (!node) continue; const o = i * 7; node.position.set(row[o], row[o + 1], row[o + 2]); quat.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]); node.quaternion.copy(quat); }
+        const thorax = nodes.get(key("walker/thorax"));
+        if (follow && thorax) {
+          zUp.updateMatrixWorld(true); thorax.getWorldPosition(delta);
+          if (anchored) { delta.sub(anchor); F.camera.position.add(delta); F.controls.target.add(delta); }
+          else { F.controls.target.copy(delta); anchored = true; }
+          thorax.getWorldPosition(anchor);
+        }
+      };
       window.__body = F;
     }
 
