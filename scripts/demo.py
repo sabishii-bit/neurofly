@@ -123,9 +123,10 @@ def main():
         serve(f"examples/brain_viewer.html?activity={rel(br['activity'])}", args.no_open, args.port)
     elif args.demo == "workbench":
         b, br = ensure_body(args), ensure_brain(args)
-        serve("examples/workbench.html?atlas=" + rel(br["atlas"]) + "&activity=" + rel(br["activity"])
-              + "&video=" + rel(os.path.join(ASSETS, "stimulus_seen.mp4")) + "&glb=" + rel(b["glb"])
-              + "&poses=" + rel(b["poses"]), args.no_open, args.port)
+        serve("examples/workbench.html?atlas=" + rel(br["atlas"])
+              + "&activity=" + rel(br["activity"])
+              + "&video=" + rel(os.path.join(ASSETS, "stimulus_seen.mp4"))
+              + "&glb=" + rel(b["glb"]) + "&poses=" + rel(b["poses"]), args.no_open, args.port)
     elif args.demo == "web-fps":
         brain = args.brain or ("malecns" if has_data() else "toy")
         art = os.path.join(ASSETS, f"fps-{brain}")
