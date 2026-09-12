@@ -5,6 +5,7 @@ Starting points to copy into your own project. Nothing here is imported by the p
 | File | What it shows |
 |---|---|
 | `health_bar_task.py` | a `Task` that reads a bar on the screen for reward, ends the episode when it empties, and presses a key to restart |
+| `workbench.html` | the three-panel workbench: what the fly saw, the brain atlas lit by its activity, the body, on one timeline with play, scrub, speed and loop; takes neurofly's own files or any replay-format model output |
 | `web_fps.html` | a Three.js game that trains the fly in the browser over a WebSocket (evolution strategies in the page), records the session for the Python trainers, and saves the artifact; the template for a web game against a local or hosted brain |
 | `brain_viewer.html` | the brain as a point cloud lit by its spikes, from `--activity-out` files or an `--activity-ws` / `serve --ws` stream; synapses from an artifact |
 | `three_viewer.html` | the exported fly body animated from `watch --poses` files or a `--pose-ws` stream |

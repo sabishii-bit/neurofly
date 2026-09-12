@@ -30,6 +30,7 @@ current options.
 | `detect-label` | run a detector over footage (`--detect`, `--every`, `--preview`) into a YOLO-layout dataset (`--out`) |
 | `detect-train` | fine-tune a detector on such a dataset (`--out`, `--backend ssdlite\|rtdetr\|dfine\|yolo`, `--model`, `--epochs`, `--size`) |
 | `detect-list`, `detect-install` | the detector backends with licences and install state; pip-install what some need |
+| `export-atlas` | the brain atlas as plain files (`--out`, `--subset`, `--all-neurons`) with a manifest and SHA-256 hashes; `--check` verifies |
 | `export-body` | the fly body as a glTF (`--out`, `--task`) for Three.js and other renderers, and with `--mjcf DIR` the complete MuJoCo model; pair with `watch --poses` or `--pose-ws` |
 
 ### Environment options (train, es, imitate, play, build)
@@ -316,6 +317,15 @@ the fly going when the keyboard focus leaves the window it started on; by defaul
 hosting options: `--per-client` (a fresh brain for every connection), `--token` (clients
 must present it; default from `NEUROFLY_TOKEN`), `--origins a,b` (browser origins
 allowed). Plus `--device` and the experiment options. See [Hosting the brain](deploy.md).
+
+### replay-export, replay-validate
+
+`neurofly-core replay-export activity.json --out model-output.json` turns an
+`--activity-out` file into the replay format (activity per frame by connectome `bodyId`,
+values in [0, 1]; `--rate-max` is the firing rate that maps to 1, `--name`, `--kind`).
+`neurofly-core replay-validate FILE --atlas DIR` checks a replay file the way the
+workbench does (version, source kind, 2 to 10,000 frames from time 0 and increasing,
+values in [0, 1], no repeated ids, ids in the atlas or artifact, 50 MB at most).
 
 ### run
 

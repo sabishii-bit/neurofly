@@ -233,6 +233,28 @@ themselves carry `activity` once it is on, and `{"op": "positions"}` (gRPC `Posi
 returns the map. From Python: `model.watch_activity(True)` then `model.last_activity`
 (`indices` and `counts` of the neurons that fired) and `model.activity_map()`.
 
+## The workbench, the atlas and the replay format
+
+`examples/workbench.html` puts three panels on one timeline: what the fly saw (a video),
+the brain atlas lit by its activity, and the body, with play, pause, scrub, speed and loop.
+It takes neurofly's own files (`--activity-out`, `watch --video`, `watch --poses`) or a
+live `--activity-ws` / `serve --ws` stream, and it draws its brain on an *atlas*:
+
+```powershell
+neurofly export-atlas --out assets/brain-atlas          # soma positions, ids, regions, hashes
+neurofly-core replay-export activity.json --out model-output.json
+neurofly-core replay-validate model-output.json --atlas assets/brain-atlas
+python -m http.server 8000   # examples/workbench.html?atlas=../assets/brain-atlas&activity=../model-output.json&video=../videos/live.mp4
+```
+
+The atlas is the anatomy as plain files with a manifest (`positions.bin`, `ids.bin`,
+`groups.bin`, `superclass.json`, SHA-256 of each, the CC BY 4.0 credit), and the *replay
+format* is a small JSON contract, activity per frame indexed by the connectome's
+`bodyId` with values in [0, 1], so that a model that is not neurofly's at all can be
+shown on the same atlas, and neurofly's activity can be shown by any viewer that reads
+it. `neurofly_core.replay` documents the fields; the validator refuses unknown ids,
+repeated ids, values outside [0, 1] and times that do not increase.
+
 ## Gamepads
 
 A layout can include gamepad buttons and axes: `--pad-buttons a,b,rb --axes lx,ly,rt`. They

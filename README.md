@@ -75,8 +75,10 @@ for your game, swap the detector, add a sense, point the readout at other neuron
   helpers turn what is on screen into reward.
 * **Seeing the brain**: every artifact carries each neuron's soma position from the
   connectome; `--activity-out` records every spike per step and `--activity-ws` streams
-  them live, and `examples/brain_viewer.html` draws the brain as a point cloud that lights
-  up as it fires, with the strongest synapses flashing between neurons.
+  them live; `examples/brain_viewer.html` draws the brain as a point cloud that lights up
+  as it fires, and `examples/workbench.html` puts what the fly saw, the brain and the body
+  on one timeline. `neurofly export-atlas` writes the anatomy as plain hashed files and
+  the *replay format* lets any model's activity be shown on it by connectome id.
 * **Safety**: a focus guard stops the fly when the keyboard focus leaves its window, and a
   watchdog releases every key if the loop stalls.
 * **The body elsewhere**: body runs export as artifacts too (observation in, 59 actuators
@@ -171,6 +173,12 @@ result, and the strongest ones (Ultralytics YOLO, YOLO-World) come under the AGP
 permissive licence here would only mislead. Every backend's own licence is listed by
 `neurofly detect-list`, and the artifacts, the protocol and the bindings work with any of
 them.
+
+## Credits
+
+`NOTICE.md` lists what the kit builds on and their licences: the MaleCNS v1.0 connectome
+(CC BY 4.0), the Shiu et al. 2024 model, flybody (Apache-2.0), the detector backends and
+Three.js. The bundled viewers show the connectome credit on screen; keep it there.
 
 ## Data and citations
 

@@ -9,6 +9,8 @@
     neurofly-core run      artifacts/myapp --window "My App" --dry-run   # drive the PC itself
     neurofly-core run      artifacts/myapp --region 0,0,800,600 --audio loopback \
                            --stimulate type_re=^PPL1:20 --probe name=readout --probe-out probe.npz
+    neurofly-core replay-export   activity.json --out model-output.json   # the replay format
+    neurofly-core replay-validate model-output.json --atlas assets/brain-atlas
 
 ``run`` needs the ``pc`` extra (screen and sound capture, keyboard, mouse and gamepad).
 """
@@ -147,6 +149,31 @@ def cmd_run(args):
           + (f"; activity written to {activity}" if activity else ""), file=sys.stderr)
 
 
+def cmd_replay_export(args):
+    import json
+    from neurofly_core.replay import from_activity, save
+    with open(args.activity) as f:
+        activity = json.load(f)
+    rep = from_activity(activity, name=args.name, kind=args.kind, rate_max=args.rate_max)
+    save(rep, args.out)
+    print(f"wrote {args.out}: {len(rep['frames'])} frames, {rep['source']['normalization']}")
+
+
+def cmd_replay_validate(args):
+    import json
+    import os
+    from neurofly_core.replay import load_ids, validate_replay
+    with open(args.replay) as f:
+        rep = json.load(f)
+    ids = load_ids(args.atlas) if args.atlas else None
+    problems = validate_replay(rep, known_ids=ids, n_bytes=os.path.getsize(args.replay))
+    if problems:
+        print("\n".join(f"  {p}" for p in problems))
+        sys.exit(1)
+    print(f"ok: {len(rep['frames'])} frames, source {rep['source'].get('kind')} "
+          f"{rep['source'].get('name', '')}".rstrip())
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="neurofly-core", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -191,6 +218,20 @@ def main(argv=None):
     s.add_argument("--device", default="cpu")
     add_experiment_args(s)
     s.set_defaults(fn=cmd_run)
+
+    s = sub.add_parser("replay-export", help="an --activity-out file -> the replay format "
+                                              "(activity by connectome id, for any viewer)")
+    s.add_argument("activity")
+    s.add_argument("--out", required=True)
+    s.add_argument("--name", default="neurofly")
+    s.add_argument("--kind", default="predicted", choices=["predicted", "measured", "synthetic"])
+    s.add_argument("--rate-max", type=float, default=50.0, help="Hz that maps to a value of 1")
+    s.set_defaults(fn=cmd_replay_export)
+
+    s = sub.add_parser("replay-validate", help="check a replay file against an atlas or artifact")
+    s.add_argument("replay")
+    s.add_argument("--atlas", default=None, help="atlas or artifact directory whose ids count")
+    s.set_defaults(fn=cmd_replay_validate)
 
     args = p.parse_args(argv)
     args.fn(args)

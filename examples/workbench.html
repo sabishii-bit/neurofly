@@ -1,0 +1,210 @@
+<!doctype html>
+<!--
+  The workbench: three panels on one clock. Left, what the fly saw (a video, or nothing);
+  upper right, the brain atlas lit by the activity; lower right, the body. Play, pause,
+  reset, scrub, speed and loop apply to all three.
+
+  Sources, all optional, all URL parameters:
+    atlas=../assets/brain-atlas       the anatomy (neurofly export-atlas); without it the
+                                      activity file's own positions are used
+    activity=../activity.json         neurofly's --activity-out file, or a replay-format file
+                                      (neurofly-core replay-export / any model's output)
+    ws=ws://127.0.0.1:8767            live activity instead (--activity-ws, or a served brain
+                                      with &subscribe=1 for neurofly-core serve --ws)
+    video=../videos/live.mp4          the frames the fly saw (neurofly play --record, watch --video)
+    fps=10                            the video's steps per second when the activity has none
+    glb=../assets/fly.glb&poses=../assets/poses.json   the body (export-body, watch --poses)
+    group=region|superclass           how the brain is coloured
+
+  Everything is drawn from files a static server can serve: python -m http.server 8000
+  from the repository root, then examples/workbench.html?atlas=...&activity=...&video=...
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>neurofly workbench</title>
+  <style>
+    :root { --bg: #0b0d12; --panel: #12151c; --ink: #dde; --dim: #889; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 13px system-ui, sans-serif; }
+    #grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; height: calc(100vh - 54px); padding: 6px; box-sizing: border-box; }
+    .panel { background: var(--panel); position: relative; overflow: hidden; border-radius: 4px; }
+    .panel h2 { position: absolute; left: 10px; top: 6px; margin: 0; font-size: 11px; letter-spacing: .08em; color: var(--dim); font-weight: 600; z-index: 2; }
+    .panel .note { position: absolute; left: 10px; bottom: 6px; font-size: 11px; color: var(--dim); z-index: 2; }
+    #env { grid-row: 1 / 3; }
+    #env video, #env canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+    #bar { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 12px; background: var(--panel); border-top: 1px solid #1c2029; }
+    #bar input[type=range] { flex: 1; }
+    #bar button, #bar select { font: inherit; }
+    #credit { font-size: 11px; color: var(--dim); white-space: nowrap; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="grid">
+    <div class="panel" id="env"><h2>01 / WHAT THE FLY SAW</h2><video id="video" muted playsinline></video><div class="note" id="envnote">no video: add ?video=</div></div>
+    <div class="panel" id="brain"><h2>02 / BRAIN</h2><div class="note" id="brainnote">loading</div></div>
+    <div class="panel" id="body"><h2>03 / BODY</h2><div class="note" id="bodynote">no body: add ?glb= and ?poses=</div></div>
+  </div>
+  <div id="bar">
+    <button id="reset">reset</button>
+    <button id="play">play</button>
+    <span id="clock">0.00 s</span>
+    <input id="scrub" type="range" min="0" max="30" step="0.01" value="0" />
+    <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>
+    <label><input id="loop" type="checkbox" checked /> loop</label>
+    <span id="credit">MaleCNS v1.0 connectome, CC BY 4.0 (FlyEM / HHMI Janelia, MRC LMB, Google Research) &middot; neurofly</span>
+  </div>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const q = new URLSearchParams(location.search);
+    const GROUP_COLOURS = ["#4fa3ff", "#ffc857", "#ff5da2", "#7ee787", "#9aa0a6"];
+    const SUPER = { ol_intrinsic: 0x4fa3ff, ol_sensory: 0x2f6fbf, visual_projection: 0x6fd3ff, visual_centrifugal: 0x3fb0c0,
+      cb_intrinsic: 0xffc857, cb_sensory: 0xff9f43, cb_motor: 0xff6b6b, descending_neuron: 0xff5da2, ascending_neuron: 0xc77dff,
+      vnc_intrinsic: 0x7ee787, vnc_motor: 0xff7b72, vnc_sensory: 0x58d6a0 };
+    const groupOf = (sc) => /^(ol_|visual_)/.test(sc) ? 0 : /^cb_/.test(sc) ? 1 : /descending/.test(sc) ? 2 : /^(vnc_|ascending|sensory_ascending|efferent_ascending)/.test(sc) ? 3 : 4;
+
+    // --- a small renderer per panel --------------------------------------------------------------
+    function view(panel, near, far) {
+      const el = document.getElementById(panel);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(el.clientWidth, el.clientHeight);
+      el.appendChild(renderer.domElement);
+      const scene = new THREE.Scene(); scene.background = new THREE.Color(0x12151c);
+      const camera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, near, far);
+      const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+      addEventListener("resize", () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); });
+      return { renderer, scene, camera, controls, el };
+    }
+
+    // --- the brain --------------------------------------------------------------------------------
+    const B = view("brain", 1, 100000);
+    let n = 0, glow = null, points = null, idIndex = null, decay = parseFloat(q.get("decay") ?? "0.85");
+    const pointMaterial = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: `attribute vec3 tint; attribute float glow; varying vec3 vTint; varying float vGlow;
+        void main() { vTint = tint; vGlow = glow; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = clamp(2.2 * (1.0 + 1.5 * glow) * (600.0 / -mv.z), 1.5, 12.0); gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec3 vTint; varying float vGlow;
+        void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard; float soft = 1.0 - smoothstep(0.2, 0.5, d);
+          float g = min(vGlow, 1.0); gl_FragColor = vec4(vTint * (0.10 + g * 0.55) + vec3(g * 0.12), soft * (0.25 + 0.35 * g)); }` });
+    function buildBrain(positions, ids, superclass, groups) {
+      n = positions.length / 3;
+      const tint = new Float32Array(n * 3); glow = new Float32Array(n);
+      const byGroup = (q.get("group") ?? "region") === "region";
+      for (let i = 0; i < n; i++) {
+        const c = new THREE.Color(byGroup ? GROUP_COLOURS[groups ? groups[i] : groupOf(superclass?.[i] ?? "")] : (SUPER[superclass?.[i]] ?? 0x9aa0a6));
+        tint[3 * i] = c.r; tint[3 * i + 1] = c.g; tint[3 * i + 2] = c.b;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute("tint", new THREE.BufferAttribute(tint, 3));
+      geo.setAttribute("glow", new THREE.BufferAttribute(glow, 1).setUsage(THREE.DynamicDrawUsage));
+      geo.computeBoundingSphere();
+      points = new THREE.Points(geo, pointMaterial); points.rotation.x = Math.PI;   // the volume's y is down
+      B.scene.add(points);
+      const s = geo.boundingSphere;
+      B.controls.target.set(s.center.x, -s.center.y, s.center.z);
+      B.camera.position.set(s.center.x, -s.center.y, s.center.z + s.radius * 1.25);
+      B.camera.near = s.radius / 100; B.camera.far = s.radius * 50; B.camera.updateProjectionMatrix();
+      idIndex = ids ? new Map(Array.from(ids, (id, i) => [Number(id), i])) : null;
+    }
+    async function fetchBin(url, ctor) { return new ctor(await (await fetch(url)).arrayBuffer()); }
+
+    // --- sources -----------------------------------------------------------------------------------
+    let activity = null, replay = null, fps = parseFloat(q.get("fps") ?? "10"), duration = 30, lastStep = -1;
+    const atlasUrl = q.get("atlas"), activityUrl = q.get("activity"), wsUrl = q.get("ws");
+    const brainnote = document.getElementById("brainnote");
+    if (atlasUrl) {
+      const m = await (await fetch(`${atlasUrl}/manifest.json`)).json();
+      const [pos, ids, groups] = await Promise.all([fetchBin(`${atlasUrl}/positions.bin`, Float32Array), fetchBin(`${atlasUrl}/ids.bin`, BigInt64Array), fetchBin(`${atlasUrl}/groups.bin`, Uint8Array)]);
+      const superclass = await (await fetch(`${atlasUrl}/${m.superclass}`)).json();
+      buildBrain(pos, ids, superclass, groups);
+      brainnote.textContent = `${m.n.toLocaleString()} neurons, ${m.dataset}`;
+    }
+    if (activityUrl) {
+      const file = await (await fetch(activityUrl)).json();
+      if (file.frames) {                                    // the replay format, by bodyId
+        replay = file; duration = file.frames[file.frames.length - 1].time || duration;
+        if (!points) brainnote.textContent = "a replay needs ?atlas= for the positions";
+        else brainnote.textContent += ` | replay: ${file.source?.kind ?? "?"} ${file.source?.name ?? ""}, ${file.frames.length} frames`;
+      } else {                                              // neurofly's activity file, by index
+        activity = file; fps = file.fps || fps; duration = file.steps.length / fps;
+        if (!points) { buildBrain(new Float32Array(file.positions.flat()), file.ids, file.superclass, null); brainnote.textContent = `${file.n.toLocaleString()} neurons`; }
+        brainnote.textContent += ` | ${file.steps.length} steps at ${fps} fps`;
+      }
+    }
+    if (wsUrl) {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => { if (q.get("subscribe") === "1") { ws.send(JSON.stringify({ op: "positions" })); ws.send(JSON.stringify({ op: "activity", on: true })); } };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.positions !== undefined && msg.n) { if (!points) buildBrain(new Float32Array(msg.positions.flat()), msg.ids, msg.superclass, null); brainnote.textContent = `live: ${msg.n} neurons from ${wsUrl}`; }
+        else if (msg.indices) lightIndices(msg.indices, msg.counts);
+      };
+      ws.onclose = () => { brainnote.textContent += " (disconnected)"; if (glow) glow.fill(0); };
+    }
+    function lightIndices(idx, counts) { for (let k = 0; k < idx.length; k++) glow[idx[k]] = Math.min(1.5, glow[idx[k]] + 0.6 + 0.15 * (counts ? counts[k] : 1)); }
+    function lightReplay(frame) { if (!frame || !idIndex) return; for (const [id, v] of frame.values) { const i = idIndex.get(Number(id)); if (i !== undefined) glow[i] = Math.max(glow[i], v); } }
+    function frameAt(frames, t) { let lo = 0, hi = frames.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (frames[mid].time <= t) lo = mid + 1; else hi = mid; } return lo ? frames[lo - 1] : null; }
+
+    // --- the video ----------------------------------------------------------------------------------
+    const video = document.getElementById("video");
+    if (q.get("video")) { video.src = q.get("video"); document.getElementById("envnote").textContent = q.get("video"); video.addEventListener("loadedmetadata", () => { if (!activityUrl) duration = video.duration; scrub.max = duration; }); }
+
+    // --- the body ---------------------------------------------------------------------------------
+    let poses = null, nodes = new Map(), bodies = [];
+    if (q.get("glb")) {
+      const F = view("body", 0.01, 100);
+      F.scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.2));
+      const zUp = new THREE.Group(); zUp.rotation.x = -Math.PI / 2; F.scene.add(zUp);
+      const gltf = await new GLTFLoader().loadAsync(q.get("glb")); zUp.add(gltf.scene);
+      gltf.scene.traverse((o) => { if (o.name) nodes.set(o.name, o); });
+      F.camera.position.set(1.2, 0.8, 1.2);
+      if (q.get("poses")) { poses = await (await fetch(q.get("poses"))).json(); bodies = poses.bodies; document.getElementById("bodynote").textContent = `${bodies.length} bodies, ${poses.frames.length} poses at ${poses.fps} fps`; }
+      else document.getElementById("bodynote").textContent = "body loaded; add ?poses= to animate";
+      const quat = new THREE.Quaternion();
+      window.__applyPose = (row) => { for (let i = 0; i < bodies.length; i++) { const node = nodes.get(bodies[i]); if (!node) continue; const o = i * 7; node.position.set(row[o], row[o + 1], row[o + 2]); quat.set(row[o + 4], row[o + 5], row[o + 6], row[o + 3]); node.quaternion.copy(quat); } };
+      window.__body = F;
+    }
+
+    // --- the clock ----------------------------------------------------------------------------------
+    const scrub = document.getElementById("scrub"), clock = document.getElementById("clock"), playBtn = document.getElementById("play");
+    scrub.max = duration;
+    let t = 0, playing = false, last = performance.now();
+    function seek(time) {
+      t = Math.max(0, Math.min(duration, time));
+      scrub.value = t; clock.textContent = `${t.toFixed(2)} s`;
+      if (video.src && Math.abs(video.currentTime - t) > 0.15) video.currentTime = t;
+      if (activity) { const step = Math.floor(t * fps); if (step !== lastStep && activity.steps[step]) { lightIndices(activity.steps[step].indices, activity.steps[step].counts); lastStep = step; } }
+      if (replay) { if (glow) glow.fill(0); lightReplay(frameAt(replay.frames, t)); }
+      if (poses) { const row = poses.frames[Math.min(poses.frames.length - 1, Math.floor(t * poses.fps))]; if (row) window.__applyPose(row); }
+    }
+    playBtn.onclick = () => { if (!playing && t >= duration) seek(0); playing = !playing; playBtn.textContent = playing ? "pause" : "play"; if (video.src) playing ? video.play() : video.pause(); };
+    document.getElementById("reset").onclick = () => { playing = false; playBtn.textContent = "play"; video.pause(); if (glow) glow.fill(0); lastStep = -1; seek(0); };
+    scrub.oninput = () => { lastStep = -1; seek(parseFloat(scrub.value)); };
+    document.getElementById("speed").onchange = (e) => { video.playbackRate = parseFloat(e.target.value); };
+    addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); playBtn.click(); } if (e.code === "KeyR") document.getElementById("reset").click(); });
+
+    function frame(now) {
+      const dt = (now - last) / 1000; last = now;
+      if (playing) {
+        const next = t + dt * parseFloat(document.getElementById("speed").value);
+        if (next >= duration) { if (document.getElementById("loop").checked) { lastStep = -1; if (glow) glow.fill(0); seek(0); } else { seek(duration); playBtn.click(); } }
+        else seek(next);
+      }
+      if (glow) { for (let i = 0; i < n; i++) glow[i] *= decay; points.geometry.attributes.glow.needsUpdate = true; }
+      B.controls.update(); B.renderer.render(B.scene, B.camera);
+      if (window.__body) { window.__body.controls.update(); window.__body.renderer.render(window.__body.scene, window.__body.camera); }
+      requestAnimationFrame(frame);
+    }
+    if (!points && !wsUrl) brainnote.textContent = "no brain: add ?atlas= or ?activity=";
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

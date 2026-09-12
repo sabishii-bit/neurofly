@@ -49,6 +49,8 @@ COMMANDS = {
     "detect-install": ("detect_backends", "pip install what some backends need"),
     "replay": ("replay", "a video with the brain's spikes and controls drawn beside the frames"),
     "export-body": ("export_body", "the fly body as a glTF, for Three.js and other renderers"),
+    "export-atlas": ("export_atlas", "the brain atlas (soma positions, ids, regions) as plain "
+                                     "files with a manifest and hashes"),
     "surrogate": ("surrogate", "train through the brain with surrogate gradients"),
     "bench": ("bench_brain", "how fast the brain steps on this machine"),
     "inspect": ("inspect_connectome", "what is in the connectome"),

@@ -65,7 +65,11 @@ def map_payload(source, fps: float | None = None) -> dict:
     """The header a viewer needs: every neuron's position, whether it is a real soma,
     its superclass, and the named populations."""
     m = source.activity_map()
+    ids = getattr(source, "neuron_ids", None)
+    if ids is None and hasattr(source, "cx"):
+        ids = source.cx.neurons["bodyId"].values
     out = {"n": int(m["n"]), "unit": m.get("unit", "micrometre"),
+           "ids": None if ids is None else [int(i) for i in ids],
            "positions": None if m["positions"] is None else m["positions"].tolist(),
            "known": None if m.get("known") is None else m["known"].tolist(),
            "superclass": m.get("superclass"),
@@ -83,8 +87,9 @@ class ActivityLog:
         self.steps: list[dict] = []
 
     def record(self) -> None:
+        """Keep this step's activity (in memory; ``save`` writes it if there is a path)."""
         a = self.source.last_activity
-        if a is None or not self.path:
+        if a is None:
             return
         self.steps.append(activity_payload(len(self.steps), a))
 
