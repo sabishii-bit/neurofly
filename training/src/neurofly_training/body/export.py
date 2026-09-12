@@ -61,8 +61,32 @@ def _geom_mesh(m, g):
     return None
 
 
-def export_body(physics, out: str, skip_bodies=("world",)) -> dict:
-    """Write the body model as a .glb; returns a summary."""
+DEFAULT_GEOM_RGBA = (0.5, 0.5, 0.5, 1.0)
+VISIBLE_GROUPS = (0, 1, 2)          # MuJoCo's default visible geom groups
+
+
+def _geom_rgba(m, g: int) -> np.ndarray:
+    """A geom's colour: its material's when it has one (the fly's brown body, red eyes,
+    translucent wings) unless the geom sets its own rgba, which overrides the material
+    in MJCF (an alpha of 0 hides inertial and helper geoms)."""
+    own = np.asarray(m.geom_rgba[g], dtype=np.float64)
+    mat = int(m.geom_matid[g])
+    if mat < 0 or not np.allclose(own, DEFAULT_GEOM_RGBA):
+        return own
+    return np.asarray(m.mat_rgba[mat], dtype=np.float64)
+
+
+def _srgb_to_linear(c: np.ndarray) -> np.ndarray:
+    """glTF base colours are linear; MuJoCo's rgba is what the screen shows (sRGB). Without
+    this the fly renders pale and washed out."""
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def export_body(physics, out: str, skip_bodies=("world",), groups=VISIBLE_GROUPS) -> dict:
+    """Write the body model as a .glb with the model's material colours; returns a
+    summary. ``groups``: the MuJoCo geom groups exported (the default is what MuJoCo
+    shows: 0 to 2; collision shapes, fluid boxes and inertial ellipsoids live in 3 to 5)."""
     import trimesh
     m, d = physics.model, physics.data
     scene = trimesh.Scene()
@@ -74,12 +98,20 @@ def export_body(physics, out: str, skip_bodies=("world",)) -> dict:
         T_body = _transform(d.xpos[b], d.xmat[b])
         scene.graph.update(frame_to=names[b], frame_from=scene.graph.base_frame, matrix=T_body)
         for g in np.flatnonzero(np.asarray(m.geom_bodyid) == b):
+            if int(m.geom_group[g]) not in groups:       # collision shapes: not for looking at
+                continue
+            rgba = _geom_rgba(m, int(g))
+            if rgba[3] <= 0.0:
+                continue
             mesh = _geom_mesh(m, int(g))
             if mesh is None:
                 continue
-            rgba = np.asarray(m.geom_rgba[g])
-            colour = (rgba * 255).astype(np.uint8)
-            mesh.visual = trimesh.visual.ColorVisuals(mesh, face_colors=colour)
+            PBR = trimesh.visual.material.PBRMaterial
+            mesh.visual = trimesh.visual.TextureVisuals(material=PBR(
+                baseColorFactor=(np.r_[_srgb_to_linear(rgba[:3]), rgba[3]] * 255)
+                .astype(np.uint8), metallicFactor=0.0,
+                roughnessFactor=0.75, alphaMode="BLEND" if rgba[3] < 1.0 else None,
+                doubleSided=rgba[3] < 1.0))
             T_geom = _transform(d.geom_xpos[g], d.geom_xmat[g])
             local = np.linalg.inv(T_body) @ T_geom
             # geoms often share their body's name in MJCF; keep node names unique

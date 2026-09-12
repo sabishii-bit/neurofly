@@ -1,6 +1,6 @@
 """Open the 3D demos in a browser, building what they need first.
 
-    python scripts/demo.py body        the fly walking a tripod gait, in the Three.js viewer
+    python scripts/demo.py body        the fly cycling a tripod gait, in the Three.js viewer
     python scripts/demo.py brain       the brain atlas lit by a run's activity
     python scripts/demo.py workbench   what the fly saw, the brain and the body on one timeline
     python scripts/demo.py web-fps     the Three.js game training a served brain in the page
@@ -52,14 +52,27 @@ def bars_video(path: str, seconds: float = 6.0, fps: int = 10) -> str:
 
 
 def ensure_body(args) -> dict:
+    """The fly and a pose file: the tripod gait as joint angles (default, clean), the gait
+    through the physics (wobbly, honest), or a real fly's walking from flybody's dataset."""
     glb = os.path.join(ASSETS, "fly.glb")
-    poses = os.path.join(ASSETS, "gait_poses.json")
-    video = os.path.join(ASSETS, "gait.mp4")
+    walk = getattr(args, "walk", "gait")
+    poses = os.path.join(ASSETS, f"{walk}_poses.json")
+    video = os.path.join(ASSETS, f"{walk}.mp4")
     if args.rebuild or not os.path.exists(glb):
         run("export-body", "--out", glb)
     if args.rebuild or not os.path.exists(poses):
-        run("watch", "--task", "forward", "--policy", "gait", "--episodes", "1", "--max-steps",
-            str(args.steps), "--poses", poses, "--video", video, "--every", "10")
+        if walk == "physics":
+            run("watch", "--task", "forward", "--policy", "gait", "--episodes", "1",
+                "--max-steps", str(args.steps), "--poses", poses, "--video", video, "--every", "10")
+        elif walk == "real":
+            from neurofly_training.cli.body_replay import find_walking_dataset
+            if not find_walking_dataset():
+                run("body-replay", "--download")
+            run("body-replay", "--index", str(getattr(args, "index", 0)), "--poses", poses,
+                "--video", video)
+        else:
+            run("body-replay", "--gait", "--steps", str(args.steps), "--poses", poses,
+                "--video", video)
     return {"glb": glb, "poses": poses, "video": video}
 
 
@@ -109,6 +122,10 @@ def main():
     p.add_argument("demo", choices=["body", "brain", "workbench", "web-fps", "all"])
     p.add_argument("--brain", default=None, choices=["malecns", "toy"])
     p.add_argument("--steps", type=int, default=600, help="body: control steps of gait (500/s)")
+    p.add_argument("--walk", default="gait", choices=["gait", "physics", "real"],
+                   help="body: the tripod gait as joint angles (default), the gait through "
+                        "the physics, or a real fly's walking (downloads flybody's dataset)")
+    p.add_argument("--index", type=int, default=0, help="body --walk real: which trajectory")
     p.add_argument("--rebuild", action="store_true")
     p.add_argument("--no-open", action="store_true")
     p.add_argument("--port", type=int, default=0, help="static server port (default: any free)")

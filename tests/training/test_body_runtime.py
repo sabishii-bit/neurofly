@@ -19,7 +19,7 @@ def test_body_model_matches_env_and_roundtrips(tmp_path):
     env = _body_env()
     model = body_model_from_env(env, "walk")
     assert isinstance(model, BodyModel) and model.n_obs == env.body.observation_space.shape[0]
-    assert model.n_actions == 59 and model.layout.names[0] == "head_abduct"
+    assert model.n_actions == 59 and model.layout.names[0] == "adhere_claw_T1_left"  # action order
     # same brain, same sensory map: the features match the training env step for step
     obs0, _ = env.reset()
     body_obs = env._last_body_obs.copy()

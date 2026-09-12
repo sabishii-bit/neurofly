@@ -130,8 +130,9 @@ def main():
     if policy == "gait":
         if pc:
             raise SystemExit("--policy gait is for body tasks")
-        from neurofly_training.body.gait import TripodGait
-        gait = TripodGait(control_hz=CONTROL_HZ, stride_hz=args.gait_hz)
+        from neurofly_training.body.gait import TripodGait, rest_action
+        gait = TripodGait(control_hz=CONTROL_HZ, stride_hz=args.gait_hz,
+                          rest=rest_action(env.physics.model))
     venv = DummyVecEnv([lambda: env])
     venv, model, decoder = load_policy(policy, args.run, dict(cfg, task=env_kwargs["task"]),
                                        env, venv)

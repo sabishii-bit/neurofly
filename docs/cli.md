@@ -30,6 +30,7 @@ current options.
 | `detect-label` | run a detector over footage (`--detect`, `--every`, `--preview`) into a YOLO-layout dataset (`--out`) |
 | `detect-train` | fine-tune a detector on such a dataset (`--out`, `--backend ssdlite\|rtdetr\|dfine\|yolo`, `--model`, `--epochs`, `--size`) |
 | `detect-list`, `detect-install` | the detector backends with licences and install state; pip-install what some need |
+| `body-replay` | joint trajectories through the body without physics: `--gait` (the tripod gait as joint angles; `--steps`, `--gait-hz`, `--amplitude`) or `--trajectory FILE.h5 --index N` (a real fly's walking from flybody's dataset; `--download` fetches it); `--poses`, `--video`, `--every` |
 | `export-atlas` | the brain atlas as plain files (`--out`, `--subset`, `--all-neurons`) with a manifest and SHA-256 hashes; `--check` verifies |
 | `export-body` | the fly body as a glTF (`--out`, `--task`) for Three.js and other renderers, and with `--mjcf DIR` the complete MuJoCo model; pair with `watch --poses` or `--pose-ws` |
 

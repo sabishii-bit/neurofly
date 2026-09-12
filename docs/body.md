@@ -1,8 +1,12 @@
 # The body
 
 The simulated fly is the MuJoCo model from the `flybody` package, wrapped as a Gymnasium
-environment (`neurofly_training.body.gym_wrapper`). The action is 59 actuators in [-1, 1] (head, abdomen,
-eight joints and one adhesion claw per leg; the order is in `neurofly_training.body.actuators`). The
+environment (`neurofly_training.body.gym_wrapper`). The action is 59 actuators in [-1, 1], in the
+order flybody's walker reads them: the six adhesion claws, the head (3), the abdomen (2), then eight
+joints per leg (T1 to T3, left before right). That is not the order the MuJoCo model lists them
+in; `neurofly_training.body.actuators` has both and the mapping between them, and every index the
+kit hands out is an action index. -1..1 spans each actuator's control range, so 0 is mid-range,
+not the standing pose: `rest_action` gives the action that holds the standing pose. The
 observation is the flattened dm_control observable dict: joint positions and velocities,
 touch sensors, gyro, accelerometer and so on; the wrapper remembers where each lives so the
 sensory encoder can find them. A control step is 2 ms.

@@ -87,11 +87,13 @@ python scripts/demo.py workbench   # what the fly saw, the brain and the body on
 python scripts/demo.py web-fps     # a Three.js game training a served brain in the page
 ```
 
-The body demo is the one to look at when you want to know the limbs are right: six legs
-cycling in two alternating tripods, coxa, femur, tibia and claws, with no training
-involved (`neurofly watch --task forward --policy gait` is the same thing as a video). It
-is a limb demo, not locomotion: open-loop, the fly stays upright and barely moves; walking
-that goes somewhere is what `neurofly train --task forward` is for. The tests run with `scripts	est.ps1` or
+The body demo is the one to look at when you want to know the limbs are right. By
+default it plays a tripod gait as joint angles, no physics, so six legs cycle cleanly in
+two alternating tripods (`neurofly body-replay --gait` is the same thing from the command
+line). `--walk real` plays a real fly's walking from flybody's motion-capture dataset,
+downloaded on first use. `--walk physics` pushes the same gait through the dynamics
+instead: open loop, the fly stands on six legs and cycles them in place without going
+anywhere much. Walking that goes somewhere is what `neurofly train --task forward` is for. The tests run with `scripts	est.ps1` or
 `scripts/test.sh`; arguments go to pytest (`-k body`, `--cov`).
 
 ## Where things go

@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from stable_baselines3.common.env_checker import check_env
 
-from neurofly_training.body.actuators import ACTUATOR_NAMES
+from neurofly_training.body.actuators import (ACTION_TO_MODEL, ACTUATOR_NAMES,
+                                              MODEL_ACTUATOR_NAMES, action_order)
 from neurofly_training.body.tasks import TASKS
 from neurofly_training.envs import make_body_env
 
@@ -22,7 +23,15 @@ def test_body_env_roundtrip(task):
 def test_layout_matches_flybody():
     env = make_body_env("forward", seed=0)
     walker = env.dm_env.task._walker
-    assert [a.name for a in walker.actuators] == ACTUATOR_NAMES
+    assert [a.name for a in walker.actuators] == MODEL_ACTUATOR_NAMES
+    assert action_order(walker) == ACTUATOR_NAMES            # the layout the action vector uses
+    assert ACTUATOR_NAMES[:6] == [f"adhere_claw_{t}_{s}" for t in ("T1", "T2", "T3")
+                                  for s in ("left", "right")]
+    assert [MODEL_ACTUATOR_NAMES[i] for i in ACTION_TO_MODEL] == ACTUATOR_NAMES
+    # the env's action bounds are the model's control ranges, in action order
+    rng = np.asarray(env.physics.model.actuator_ctrlrange)[ACTION_TO_MODEL]
+    assert np.allclose(env.unscale_action(-np.ones(59, np.float32)), rng[:, 0])
+    assert np.allclose(env.unscale_action(np.ones(59, np.float32)), rng[:, 1])
     assert env.joint_names is not None and len(env.joint_names) == 85
     jp = env.obs_slices["walker/joints_pos"]
     assert jp.stop - jp.start == 85
@@ -71,6 +80,14 @@ def test_tripod_gait_moves_every_leg():
     assert gripping.max() == pytest.approx(0.0, abs=1e-3)
     env = make_body_env("forward", seed=0)
     obs, _ = env.reset()
+    # through the physics the sinusoids sit on the standing pose, not mid-range
+    from neurofly_training.body.gait import rest_action
+    rest = rest_action(env.physics.model)
+    ctrl = env.unscale_action(rest)
+    pos = (env.physics.model.actuator_trntype == 0)[ACTION_TO_MODEL]
+    assert np.abs(ctrl[pos]).max() < 1e-5 and (ctrl[:6] == 0).all()       # no grip
+    gait = TripodGait(control_hz=500, stride_hz=2.0, rest=rest)
+    assert np.allclose(gait(0)[~pos][gait(0)[~pos] != -1], rest[~pos][gait(0)[~pos] != -1])
     jp = env.obs_slices["walker/joints_pos"]
     joints = []
     for k in range(200):

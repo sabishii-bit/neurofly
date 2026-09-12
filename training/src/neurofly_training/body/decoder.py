@@ -31,11 +31,12 @@ class LinearDecoder:
             feats = np.array([pos[int(n)] for n in pops.leg_motor[(t, side)] if int(n) in pos])
             if len(feats):
                 acts = leg_actuator_indices(t, side)
-                self.blocks.append((acts, feats, rng.normal(scale=scale, size=(len(acts), len(feats)))))
+                W = rng.normal(scale=scale, size=(len(acts), len(feats)))
+                self.blocks.append((acts, feats, W))
         feats = np.array([pos[int(n)] for n in pops.descending if int(n) in pos])
         if len(feats):
-            self.blocks.append((HEAD_ABDOMEN_INDICES, feats,
-                                rng.normal(scale=scale, size=(len(HEAD_ABDOMEN_INDICES), len(feats)))))
+            W = rng.normal(scale=scale, size=(len(HEAD_ABDOMEN_INDICES), len(feats)))
+            self.blocks.append((HEAD_ABDOMEN_INDICES, feats, W))
         self.bias = np.zeros(n_actions)
 
     def __call__(self, features: np.ndarray) -> np.ndarray:
