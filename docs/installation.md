@@ -49,8 +49,13 @@ Extras are optional groups of dependencies; add them in the brackets, comma-sepa
 | core | `video` | imageio, imageio-ffmpeg | reading video files without the training package |
 | training | `flybody` | the MuJoCo fruit fly, from GitHub | body tasks: `--task forward`, `--task ball`, `export-body` |
 | training | `ocr` | pytesseract | `NumberOnScreen` and `read_number` (plus a Tesseract install) |
-| training | `detect` | transformers, torchvision, onnx, onnxruntime | object detectors: `--detect`, `detect-label`, `detect-train` |
-| training | `yolo` | ultralytics | YOLO as a detector backend. **AGPL-3.0**: install it only if that licence suits your project |
+| training | `detect` | transformers, torchvision, onnx, onnxruntime | object detectors (OWLv2, Grounding DINO, RT-DETR, D-FINE, SSDLite, ONNX): `--detect`, `detect-label`, `detect-train` |
+| training | `yolo` | ultralytics | the Ultralytics backends: YOLO11 and YOLO-World (AGPL-3.0, like this project) |
+
+`neurofly detect-list` shows each detector backend, whether it is installed and its licence;
+`neurofly detect-install yolo dfine` installs what the named ones need. Ultralytics likes to
+pip-install its own requirements while running; neurofly turns that off (it once replaced
+this project's pinned numpy), so install through `detect-install` or the extra instead.
 | training | `dev` | pytest, pytest-cov, ruff, grpcio-tools | tests, coverage, lint, regenerating the gRPC stubs |
 
 A runtime-only machine: `pip install -e core[pc,grpc]`. A full development machine:

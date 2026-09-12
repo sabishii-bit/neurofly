@@ -2,21 +2,22 @@
 
 The brain cannot learn what an enemy is from pixels; a detector can say where the
 enemies are, and the ``DetectionEncoder`` in the core turns that into drive on central
-brain neurons. Four backends behind one interface, chosen by a spec string:
+brain neurons. Every backend sits behind one interface and one spec grammar,
+``backend:arg`` (``neurofly detect-list`` shows them all with their licences):
 
-    owl:enemy,health pack,door       open-vocabulary (OWL-ViT): describe the objects in
-                                     words, no training at all; slow but zero effort
-    owl2:enemy,health pack           the same with OWLv2: better, especially on screens
-                                     and drawn objects, about twice as slow
-    runs/det1                        a detector you fine-tuned with `neurofly detect-train`
-                                     (a directory with detector.json), torchvision or YOLO
-    onnx:runs/det1                   the exported ONNX model in that directory, through
-                                     ONNX Runtime (what a consumer in another language runs)
-    yolo:yolov8n.pt                  an Ultralytics YOLO model (their package is AGPL-3.0)
+    owl2:enemy,health pack,door      OWLv2, open vocabulary: name the objects, no training
+    owl:...   gdino:...              OWL-ViT (faster, weaker); Grounding DINO (phrases)
+    yolo-world:enemy,health pack     YOLO-World: open vocabulary in real time
+    yolo:                            Ultralytics YOLO11 on its COCO classes (yolo:yolo11m.pt)
+    yolo:runs/det1                   a YOLO you fine-tuned with `neurofly detect-train`
+    rtdetr: / dfine:                 RT-DETRv2 / D-FINE (Apache) pretrained, or fine-tuned dirs
+    runs/det1                        any detect-train run directory (detector.json says which)
+    onnx:runs/det1                   the exported detector.onnx through ONNX Runtime
 
 Every backend returns, per frame, a list of ``{"class", "box", "score"}`` with the box in
 fractions of the frame, and carries ``classes`` (the names, in id order). ``classes_for``
-gives the names without loading weights, so a model can be built before a detector runs.
+gives the names without loading weights where it can, so a model can be built before a
+detector runs. Backends that are not installed say what to run.
 """
 from __future__ import annotations
 
@@ -137,6 +138,7 @@ class OnnxDetector(Detector):
         self.classes = list(meta["classes"])
         self.size = int(meta.get("size", 320))
         self.threshold = float(meta.get("threshold", 0.3) if threshold is None else threshold)
+        self.layout = meta.get("onnx_layout", "torchvision")
         self.session = ort.InferenceSession(os.path.join(run_dir, "detector.onnx"),
                                             providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
@@ -145,10 +147,55 @@ class OnnxDetector(Detector):
         from PIL import Image
         img = Image.fromarray(np.asarray(frame)).resize((self.size, self.size), Image.BILINEAR)
         x = np.asarray(img, np.float32).transpose(2, 0, 1)[None] / 255.0
-        boxes, scores, labels = self.session.run(None, {self.input_name: x})[:3]
+        outputs = self.session.run(None, {self.input_name: x})
+        if self.layout == "ultralytics":
+            boxes, scores, labels = decode_ultralytics(outputs[0], self.threshold)
+        else:                          # torchvision: boxes, scores, 1-based labels
+            boxes, scores, labels = outputs[0], outputs[1], np.asarray(outputs[2]).ravel() - 1
         return _rows_to_dicts(np.asarray(boxes).reshape(-1, 4), np.asarray(scores).ravel(),
-                              np.asarray(labels).ravel() - 1, self.classes, self.size, self.size,
+                              np.asarray(labels).ravel(), self.classes, self.size, self.size,
                               self.threshold)
+
+
+def decode_ultralytics(raw: np.ndarray, threshold: float, iou: float = 0.5, top: int = 100):
+    """Ultralytics' ONNX output ``[1, 4 + n_classes, n_anchors]`` (cx, cy, w, h in pixels,
+    then class scores) -> boxes xyxy, scores, 0-based labels after a plain NMS."""
+    p = np.asarray(raw)[0].T                                  # (anchors, 4 + classes)
+    xywh, cls = p[:, :4], p[:, 4:]
+    labels = cls.argmax(axis=1)
+    scores = cls[np.arange(len(cls)), labels]
+    keep = scores >= threshold
+    xywh, scores, labels = xywh[keep], scores[keep], labels[keep]
+    boxes = np.stack([xywh[:, 0] - xywh[:, 2] / 2, xywh[:, 1] - xywh[:, 3] / 2,
+                      xywh[:, 0] + xywh[:, 2] / 2, xywh[:, 1] + xywh[:, 3] / 2], axis=1)
+    order = np.argsort(-scores)
+    chosen: list[int] = []
+    for i in order:
+        if len(chosen) >= top:
+            break
+        ok = True
+        for j in chosen:
+            if labels[j] != labels[i]:
+                continue
+            ix0, iy0 = max(boxes[i, 0], boxes[j, 0]), max(boxes[i, 1], boxes[j, 1])
+            ix1, iy1 = min(boxes[i, 2], boxes[j, 2]), min(boxes[i, 3], boxes[j, 3])
+            inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+            a = (boxes[i, 2] - boxes[i, 0]) * (boxes[i, 3] - boxes[i, 1])
+            b = (boxes[j, 2] - boxes[j, 0]) * (boxes[j, 3] - boxes[j, 1])
+            if inter / (a + b - inter + 1e-9) > iou:
+                ok = False
+                break
+        if ok:
+            chosen.append(int(i))
+    idx = np.asarray(chosen, dtype=np.int64)
+    return boxes[idx], scores[idx], labels[idx]
+
+
+def _ultralytics_no_autoinstall() -> None:
+    """Ultralytics pip-installs missing requirements on its own (and once replaced this
+    environment's numpy with an incompatible one). Off: `neurofly detect-install yolo`
+    installs what it needs, including CLIP for YOLO-World."""
+    os.environ.setdefault("YOLO_AUTOINSTALL", "False")
 
 
 class UltralyticsDetector(Detector):
@@ -156,8 +203,12 @@ class UltralyticsDetector(Detector):
     extra) puts your project under that licence's terms; the rest of neurofly does not."""
     name = "yolo"
 
-    def __init__(self, weights: str, threshold: float = 0.25, device: str = "cpu"):
+    def __init__(self, weights: str = "yolo11n.pt", threshold: float = 0.25,
+                 device: str = "cpu"):
+        _ultralytics_no_autoinstall()
         from ultralytics import YOLO
+        if os.path.isdir(weights):
+            weights = os.path.join(weights, "detector.pt")
         self.model = YOLO(weights)
         names = self.model.names
         self.classes = ([names[i] for i in range(len(names))] if isinstance(names, dict)
@@ -232,62 +283,207 @@ class FixedDetections(Detector):
         return d
 
 
+class YOLOWorldDetector(UltralyticsDetector):
+    """YOLO-World v2 through Ultralytics: text prompts, real time. Setting the classes
+    downloads a CLIP text encoder the first time."""
+    name = "yolo-world"
+
+    def __init__(self, prompts, weights: str = "yolov8s-worldv2.pt", threshold: float = 0.1,
+                 device: str = "cpu"):
+        _ultralytics_no_autoinstall()
+        from ultralytics import YOLOWorld
+        self.classes = [str(p).strip() for p in prompts if str(p).strip()]
+        if not self.classes:
+            raise ValueError("yolo-world needs at least one prompt")
+        self.model = YOLOWorld(weights)
+        self.model.set_classes(self.classes)
+        self.threshold, self.device = float(threshold), device
+
+
+class GroundingDinoDetector(Detector):
+    """Grounding DINO (Apache-2.0, through ``transformers``): phrase-grounded detection.
+    The prompts become one caption; a box's phrase is matched back to a prompt."""
+    name = "gdino"
+
+    def __init__(self, prompts, model_name: str = "IDEA-Research/grounding-dino-tiny",
+                 threshold: float = 0.25, device: str = "cpu"):
+        import torch
+        from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+        self.classes = [str(p).strip().lower() for p in prompts if str(p).strip()]
+        if not self.classes:
+            raise ValueError("gdino needs at least one prompt")
+        self.threshold = float(threshold)
+        self.device = torch.device(device)
+        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name) \
+            .to(self.device).eval()
+        self.text = ". ".join(self.classes) + "."
+        self._torch = torch
+
+    def _class_of(self, phrase) -> int | None:
+        phrase = str(phrase).strip().lower()
+        for i, c in enumerate(self.classes):
+            if phrase == c:
+                return i
+        for i, c in enumerate(self.classes):
+            if c in phrase or phrase in c:
+                return i
+        return None
+
+    def detect(self, frame: np.ndarray) -> list[dict]:
+        from PIL import Image
+        img = Image.fromarray(np.asarray(frame))
+        inputs = self.processor(images=img, text=self.text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with self._torch.no_grad():
+            outputs = self.model(**inputs)
+        res = self.processor.post_process_grounded_object_detection(
+            outputs, inputs["input_ids"], threshold=self.threshold, text_threshold=self.threshold,
+            target_sizes=[(img.height, img.width)])[0]
+        phrases = res.get("text_labels", res.get("labels"))
+        out = []
+        for box, score, phrase in zip(res["boxes"].cpu().numpy(), res["scores"].cpu().numpy(),
+                                      phrases):
+            c = self._class_of(phrase)
+            if c is None:
+                continue
+            x0, y0, x1, y1 = [float(v) for v in box]
+            out.append({"class": c, "label": self.classes[c],
+                        "box": [x0 / img.width, y0 / img.height, x1 / img.width, y1 / img.height],
+                        "score": float(score)})
+        return out
+
+
+class TransformersDetector(Detector):
+    """A detector from the ``transformers`` model hub or a ``train_transformers`` run:
+    RT-DETRv2, D-FINE and any other ``AutoModelForObjectDetection``."""
+    name = "transformers"
+
+    def __init__(self, model_id: str, threshold: float | None = None, device: str = "cpu",
+                 name: str | None = None):
+        import torch
+        from transformers import AutoImageProcessor, AutoModelForObjectDetection
+        self.name = name or self.name
+        meta = {}
+        if os.path.isdir(model_id) and os.path.exists(os.path.join(model_id, DETECTOR_JSON)):
+            with open(os.path.join(model_id, DETECTOR_JSON)) as f:
+                meta = json.load(f)
+        self.threshold = float(meta.get("threshold", 0.3) if threshold is None else threshold)
+        self.device = torch.device(device)
+        self.processor = AutoImageProcessor.from_pretrained(model_id)
+        self.model = AutoModelForObjectDetection.from_pretrained(model_id).to(self.device).eval()
+        id2label = self.model.config.id2label
+        self.classes = list(meta.get("classes") or
+                            [id2label[i] for i in sorted(id2label)])
+        self._torch = torch
+
+    def detect(self, frame: np.ndarray) -> list[dict]:
+        from PIL import Image
+        img = Image.fromarray(np.asarray(frame))
+        inputs = self.processor(images=img, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with self._torch.no_grad():
+            outputs = self.model(**inputs)
+        res = self.processor.post_process_object_detection(
+            outputs, threshold=self.threshold, target_sizes=[(img.height, img.width)])[0]
+        return _rows_to_dicts(res["boxes"].cpu().numpy(), res["scores"].cpu().numpy(),
+                              res["labels"].cpu().numpy(), self.classes, img.width, img.height,
+                              self.threshold)
+
+
+# --- factories, one per backend (see neurofly_training.pc.backends) ------------------------------
+
+def _thr(threshold):
+    return {} if threshold is None else {"threshold": threshold}
+
+
+def make_owl2(arg, device="cpu", threshold=None):
+    return OpenVocabDetector(_split_prompts(arg), model_name="google/owlv2-base-patch16-ensemble",
+                             device=device, **_thr(threshold))
+
+
+def make_owl(arg, device="cpu", threshold=None):
+    return OpenVocabDetector(_split_prompts(arg), device=device, **_thr(threshold))
+
+
+def make_gdino(arg, device="cpu", threshold=None):
+    return GroundingDinoDetector(_split_prompts(arg), device=device, **_thr(threshold))
+
+
+def make_yolo_world(arg, device="cpu", threshold=None):
+    return YOLOWorldDetector(_split_prompts(arg), device=device, **_thr(threshold))
+
+
+def make_yolo(arg, device="cpu", threshold=None):
+    return UltralyticsDetector(arg or "yolo11n.pt", device=device, **_thr(threshold))
+
+
+def make_rtdetr(arg, device="cpu", threshold=None):
+    return TransformersDetector(arg or "PekingU/rtdetr_v2_r18vd", threshold=threshold,
+                                device=device, name="rtdetr")
+
+
+def make_dfine(arg, device="cpu", threshold=None):
+    return TransformersDetector(arg or "ustc-community/dfine-small-coco", threshold=threshold,
+                                device=device, name="dfine")
+
+
+def make_ssdlite(arg, device="cpu", threshold=None):
+    return TorchvisionDetector(arg, threshold=threshold, device=device)
+
+
+def make_onnx(arg, device="cpu", threshold=None):
+    return OnnxDetector(arg, threshold=threshold)
+
+
 # --- specs ------------------------------------------------------------------------------------
 
 def _split_prompts(text: str) -> list[str]:
-    return [p.strip() for p in re.split(r"[,;]", text) if p.strip()]
+    """``'a, b; c . d .'`` -> ``['a', 'b', 'c', 'd']``: commas, semicolons, or the
+    Grounding DINO habit of full stops between phrases."""
+    return [p.strip() for p in re.split(r"[,;]|\s\.\s|\.\s*$", text) if p.strip()]
 
 
 def parse_spec(spec: str) -> tuple[str, str]:
-    """``'owl:a,b'`` -> ('owl', 'a,b'); a directory -> (its backend, the directory)."""
+    """``'owl2:a,b'`` -> ('owl2', 'a,b'); a run directory -> (its backend, the directory).
+    A backend name alone (``'dfine'`` or ``'dfine:'``) means its default weights."""
+    from neurofly_training.pc import backends
     spec = str(spec).strip()
     head, sep, tail = spec.partition(":")
-    if sep and head in ("owl", "owl2", "onnx", "yolo", "torchvision") and not (
-            len(head) == 1 and tail.startswith(("\\", "/"))):
-        return head, tail
+    key = backends.ALIASES.get(head, head)
+    if key in backends.BACKENDS and not (len(head) == 1 and tail.startswith(("\\", "/"))):
+        return key, tail.strip()
     if os.path.isdir(spec) and os.path.exists(os.path.join(spec, DETECTOR_JSON)):
         with open(os.path.join(spec, DETECTOR_JSON)) as f:
-            return json.load(f).get("backend", "torchvision"), spec
-    raise ValueError(f"unknown detector {spec!r}: use owl:<prompts>, yolo:<weights>, "
-                     f"onnx:<dir> or a directory written by `neurofly detect-train`")
+            b = json.load(f).get("backend", "ssdlite")
+        return backends.ALIASES.get(b, b), spec
+    raise ValueError(f"unknown detector {spec!r}: use backend:arg with a backend from "
+                     f"`neurofly detect-list`, or a directory written by `neurofly detect-train`")
 
 
 def classes_for(spec) -> list[str]:
-    """The class names a spec will produce, without loading any weights where possible."""
+    """The class names a spec will produce, without loading weights where possible."""
+    from neurofly_training.pc import backends
     if spec is None or str(spec).lower() in ("", "none"):
         return []
     backend, arg = parse_spec(spec)
-    if backend in ("owl", "owl2"):
+    if backends.get(backend).kind == "open-vocab":
         return _split_prompts(arg)
-    if backend in ("torchvision", "onnx") or os.path.isdir(arg):
+    if os.path.isdir(arg) and os.path.exists(os.path.join(arg, DETECTOR_JSON)):
         with open(os.path.join(arg, DETECTOR_JSON)) as f:
             return list(json.load(f)["classes"])
     return make_detector(spec).classes
 
 
 def make_detector(spec, device: str = "cpu", threshold: float | None = None) -> Detector | None:
+    """A ``Detector`` for a spec, or None for no spec. Raises RuntimeError with the install
+    command when the backend's packages are missing."""
+    from neurofly_training.pc import backends
     if spec is None or str(spec).lower() in ("", "none"):
         return None
     backend, arg = parse_spec(spec)
-    if backend == "owl":
-        return OpenVocabDetector(_split_prompts(arg), device=device,
-                                 **({} if threshold is None else {"threshold": threshold}))
-    if backend == "owl2":
-        return OpenVocabDetector(_split_prompts(arg),
-                                 model_name="google/owlv2-base-patch16-ensemble",
-                                 device=device,
-                                 **({} if threshold is None else {"threshold": threshold}))
-    if backend == "torchvision":
-        return TorchvisionDetector(arg, threshold=threshold, device=device)
-    if backend == "onnx":
-        return OnnxDetector(arg, threshold=threshold)
-    if backend == "yolo":
-        weights = arg
-        if os.path.isdir(arg):
-            weights = os.path.join(arg, "detector.pt")
-        return UltralyticsDetector(weights, device=device,
-                                   **({} if threshold is None else {"threshold": threshold}))
-    raise ValueError(f"unknown detector backend {backend!r}")
+    b = backends.require(backend)
+    return backends.resolve(b.factory)(arg, device=device, threshold=threshold)
 
 
 def cached(detector: Detector | None, video_path: str | None) -> Detector | None:
@@ -381,16 +577,17 @@ def ssdlite(n_classes: int, pretrained_backbone: bool = True, size: int = 320):
     return model
 
 
-def train_torchvision(dataset: str, out: str, *, epochs: int = 20, size: int = 320,
+def train_torchvision(dataset: str, out: str, *, epochs: int = 20, size: int | None = 320,
                       batch: int = 8, lr: float = 1e-3, holdout: float = 0.1, seed: int = 0,
                       pretrained: bool = True, threshold: float = 0.3, device: str = "cpu",
-                      export_onnx: bool = True, verbose: bool = False) -> dict:
+                      export_onnx: bool = True, verbose: bool = False, **_ignored) -> dict:
     """Fine-tune SSDLite on a YOLO-layout dataset; writes ``detector.pt``, ``detector.json``
     and (when the export succeeds) ``detector.onnx`` to ``out``. Returns a history with
     the loss per epoch and the held-out loss."""
     import torch
     from PIL import Image
     torch.manual_seed(seed)
+    size = int(size or 320)
     classes, items = read_yolo_dataset(dataset)
     if not items:
         raise ValueError(f"no images in {dataset}")
@@ -444,7 +641,7 @@ def train_torchvision(dataset: str, out: str, *, epochs: int = 20, size: int = 3
     model.eval().cpu()
     os.makedirs(out, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(out, "detector.pt"))
-    meta = {"backend": "torchvision", "classes": classes, "size": size, "threshold": threshold,
+    meta = {"backend": "ssdlite", "classes": classes, "size": size, "threshold": threshold,
             "arch": "ssdlite320_mobilenet_v3_large", "onnx": False}
     if export_onnx:
         try:
@@ -472,28 +669,36 @@ def export_onnx_model(model, path: str, size: int) -> None:
                       dynamo=False)
 
 
-def train_ultralytics(dataset: str, out: str, *, epochs: int = 20, size: int = 320,
-                      batch: int = 8, model: str = "yolov8n.pt", device: str = "cpu",
-                      threshold: float = 0.25, verbose: bool = False) -> dict:
+def train_ultralytics(dataset: str, out: str, *, epochs: int = 20, size: int | None = 320,
+                      batch: int = 8, model: str | None = None, device: str = "cpu",
+                      threshold: float = 0.25, verbose: bool = False, **_ignored) -> dict:
     """Fine-tune an Ultralytics YOLO model (AGPL-3.0 package) on the same dataset and
     write ``detector.pt`` (their weights) plus ``detector.json`` and, when it succeeds,
     ``detector.onnx``."""
     import shutil
+    _ultralytics_no_autoinstall()
     from ultralytics import YOLO
     classes, _ = read_yolo_dataset(dataset)
+    size = int(size or 320)
+    model = model or "yolo11n.pt"
     yolo = YOLO(model)
-    res = yolo.train(data=os.path.join(dataset, "data.yaml"), epochs=epochs, imgsz=size,
-                     batch=batch, device=device, project=out, name="train", exist_ok=True,
-                     verbose=verbose, plots=False)
-    best = os.path.join(out, "train", "weights", "best.pt")
-    if not os.path.exists(best):
-        best = os.path.join(out, "train", "weights", "last.pt")
+    out = os.path.abspath(out)        # a relative project would land in Ultralytics' runs dir
     os.makedirs(out, exist_ok=True)
+    res = yolo.train(data=os.path.abspath(os.path.join(dataset, "data.yaml")), epochs=epochs,
+                     imgsz=size, batch=batch, device=device, project=out, name="train",
+                     exist_ok=True, verbose=verbose, plots=False)
+    trainer = getattr(yolo, "trainer", None)
+    candidates = [str(getattr(trainer, "best", "")), str(getattr(trainer, "last", "")),
+                  os.path.join(out, "train", "weights", "best.pt"),
+                  os.path.join(out, "train", "weights", "last.pt")]
+    best = next((c for c in candidates if c and os.path.exists(c)), None)
+    if best is None:
+        raise RuntimeError(f"Ultralytics wrote no weights under {out}")
     shutil.copyfile(best, os.path.join(out, "detector.pt"))
     meta = {"backend": "yolo", "classes": classes, "size": size, "threshold": threshold,
             "arch": model, "onnx": False}
     try:
-        exported = YOLO(best).export(format="onnx", imgsz=size)
+        exported = YOLO(best).export(format="onnx", imgsz=size, simplify=False)
         shutil.copyfile(exported, os.path.join(out, "detector.onnx"))
         meta["onnx"] = True
         meta["onnx_layout"] = "ultralytics"
@@ -502,3 +707,94 @@ def train_ultralytics(dataset: str, out: str, *, epochs: int = 20, size: int = 3
     with open(os.path.join(out, DETECTOR_JSON), "w") as f:
         json.dump(meta, f, indent=2)
     return {"classes": classes, "results": str(getattr(res, "save_dir", out))}
+
+
+def train_transformers(dataset: str, out: str, *, model_id: str, backend: str, epochs: int = 20,
+                       size: int | None = 640, batch: int = 4, lr: float = 1e-4,
+                       holdout: float = 0.1,
+                       seed: int = 0, threshold: float = 0.3, device: str = "cpu",
+                       verbose: bool = False, **_ignored) -> dict:
+    """Fine-tune a ``transformers`` detector (RT-DETRv2, D-FINE) on a YOLO-layout dataset.
+    Writes the model and processor to ``out`` plus ``detector.json``; the run directory is
+    then a spec on its own. Returns a history with the loss per epoch."""
+    import torch
+    from PIL import Image
+    from transformers import AutoImageProcessor, AutoModelForObjectDetection
+    torch.manual_seed(seed)
+    size = max(int(size or 640), 320)     # DETR-style decoders need enough tokens to pick from
+    classes, items = read_yolo_dataset(dataset)
+    if not items:
+        raise ValueError(f"no images in {dataset}")
+    rng = np.random.default_rng(seed)
+    order = rng.permutation(len(items))
+    n_hold = int(len(items) * holdout)
+    hold, train = [items[i] for i in order[:n_hold]], [items[i] for i in order[n_hold:]]
+    if not train:
+        train, hold = hold, []
+    processor = AutoImageProcessor.from_pretrained(model_id, size={"height": size, "width": size},
+                                                   do_pad=False)
+    id2label = {i: c for i, c in enumerate(classes)}
+    model = AutoModelForObjectDetection.from_pretrained(
+        model_id, num_labels=len(classes), id2label=id2label,
+        label2id={c: i for i, c in id2label.items()}, ignore_mismatched_sizes=True)
+    dev = torch.device(device)
+    model.to(dev)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+
+    def batch_of(chunk):
+        images, anns = [], []
+        for k, (path, boxes, labels) in enumerate(chunk):
+            img = Image.open(path).convert("RGB")
+            w, h = img.size
+            images.append(img)
+            anns.append({"image_id": k, "annotations": [
+                {"bbox": [float(x0 * w), float(y0 * h), float((x1 - x0) * w),
+                          float((y1 - y0) * h)],
+                 "category_id": int(c), "area": float((x1 - x0) * w * (y1 - y0) * h),
+                 "iscrowd": 0}
+                for (x0, y0, x1, y1), c in zip(boxes, labels)]})
+        enc = processor(images=images, annotations=anns, return_tensors="pt")
+        return enc["pixel_values"].to(dev), [{k: v.to(dev) for k, v in t.items()}
+                                             for t in enc["labels"]]
+
+    history = {"loss": [], "holdout": None, "classes": classes, "n_train": len(train),
+               "n_holdout": len(hold), "model_id": model_id}
+    for ep in range(epochs):
+        model.train()
+        rng.shuffle(train)
+        total, nb = 0.0, 0
+        for i in range(0, len(train), batch):
+            pixels, labels = batch_of(train[i:i + batch])
+            loss = model(pixel_values=pixels, labels=labels).loss
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total += float(loss)
+            nb += 1
+        history["loss"].append(total / max(nb, 1))
+        if verbose:
+            print(f"epoch {ep + 1}/{epochs}  loss {history['loss'][-1]:.4f}")
+    if hold:
+        model.eval()
+        with torch.no_grad():
+            pixels, labels = batch_of(hold)
+            history["holdout"] = float(model(pixel_values=pixels, labels=labels).loss)
+    os.makedirs(out, exist_ok=True)
+    model.cpu().save_pretrained(out)
+    processor.save_pretrained(out)
+    with open(os.path.join(out, DETECTOR_JSON), "w") as f:
+        json.dump({"backend": backend, "classes": classes, "size": size, "threshold": threshold,
+                   "arch": model_id, "onnx": False}, f, indent=2)
+    with open(os.path.join(out, "history.json"), "w") as f:
+        json.dump(history, f, indent=2)
+    return history
+
+
+def train_rtdetr(dataset: str, out: str, model: str | None = None, **kw) -> dict:
+    return train_transformers(dataset, out, model_id=model or "PekingU/rtdetr_v2_r18vd",
+                              backend="rtdetr", **kw)
+
+
+def train_dfine(dataset: str, out: str, model: str | None = None, **kw) -> dict:
+    return train_transformers(dataset, out, model_id=model or "ustc-community/dfine-small-coco",
+                              backend="dfine", **kw)

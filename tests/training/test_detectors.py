@@ -34,11 +34,12 @@ class PerfectDetector(D.Detector):
 def test_specs_and_classes(tmp_path):
     assert D.parse_spec("owl:enemy, health pack") == ("owl", "enemy, health pack")
     assert D.classes_for("owl:enemy, health pack;door") == ["enemy", "health pack", "door"]
+    assert D.classes_for("gdino:enemy . health pack . door.") == ["enemy", "health pack", "door"]
     assert D.classes_for(None) == [] and D.classes_for("none") == []
     run = tmp_path / "det"
     run.mkdir()
     json.dump({"backend": "torchvision", "classes": ["a", "b"]}, open(run / "detector.json", "w"))
-    assert D.parse_spec(str(run)) == ("torchvision", str(run))
+    assert D.parse_spec(str(run)) == ("ssdlite", str(run))      # the old name is an alias
     assert D.classes_for(str(run)) == ["a", "b"] and D.classes_for(f"onnx:{run}") == ["a", "b"]
     with pytest.raises(ValueError):
         D.parse_spec("nothing here")

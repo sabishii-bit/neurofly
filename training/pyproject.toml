@@ -32,8 +32,8 @@ flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
 ocr = ["pytesseract"]
 # object detectors: open-vocabulary (transformers), fine-tuning (torchvision), ONNX export
 detect = ["transformers", "torchvision", "onnx", "onnxruntime"]
-# Ultralytics YOLO as a detector backend. Their package is AGPL-3.0: opt in knowingly.
-yolo = ["ultralytics"]
+# the Ultralytics backends (YOLO11, YOLO-World); AGPL-3.0, like this project
+yolo = ["ultralytics", "clip @ git+https://github.com/ultralytics/CLIP.git"]
 # tests, lint, and regenerating the gRPC stubs
 dev = ["pytest", "pytest-cov", "ruff", "grpcio-tools"]
 

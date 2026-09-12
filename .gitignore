@@ -36,3 +36,4 @@ bindings/node/package-lock.json
 /assets/
 /.coverage
 /htmlcov/
+/*.pt

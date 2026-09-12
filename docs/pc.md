@@ -101,32 +101,41 @@ pip install -e training[detect]
 neurofly play --window "My App" --keys w,a,s,d --detect "owl2:enemy soldier,health pack,door" --dry-run
 ```
 
-`owl2:<prompts>` is an open-vocabulary detector (OWLv2, Apache-2.0): describe the objects
-in words and it finds them, no training and no labelling. It is slow (a few frames per
-second on a CPU, about 3 s per 960x540 frame) but it needs nothing from you; `owl:` is the
-older OWL-ViT, three times faster and noticeably worse on screens and drawn objects. Check
-what a prompt finds before trusting it: `neurofly detect-label footage.mp4 --detect
-"owl2:enemy" --preview check.mp4`. Scores are low by nature; 0.1 is a sensible cut.
+A detector is a *backend* behind one spec grammar, `backend:arg`. `neurofly detect-list`
+shows them all, whether they are installed, and their licences; `neurofly detect-install
+<backend>` pip-installs what one needs into the running Python.
 
-When you want speed, distil the open-vocabulary detector into a fast one, still without
-labelling anything by hand:
+| Spec | What | Licence | On a CPU |
+|---|---|---|---|
+| `owl2:enemy,health pack` | OWLv2, open vocabulary: name the objects, no training | Apache-2.0 | 3 s per frame |
+| `owl:...` | OWL-ViT: the same, three times faster, weaker on screens | Apache-2.0 | 1 s |
+| `gdino:...` | Grounding DINO: phrase-grounded boxes | Apache-2.0 | several seconds |
+| `yolo-world:enemy,door` | YOLO-World v2: open vocabulary in real time | AGPL package, GPL weights | 50 ms |
+| `yolo:` / `yolo:yolo11m.pt` | YOLO11 on its 80 COCO classes; also the best fine-tuning tooling | AGPL-3.0 | 20 to 60 ms |
+| `rtdetr:` | RT-DETRv2, pretrained on COCO; fine-tunable | Apache-2.0 | 100 to 200 ms |
+| `dfine:` | D-FINE, the current accuracy leader per FLOP; fine-tunable | Apache-2.0 | 100 to 200 ms |
+| `runs/det1` | any `detect-train` run directory | as its backend | |
+| `onnx:runs/det1` | an exported `detector.onnx` through ONNX Runtime, the same file a consumer in another language runs | the model's own | |
+
+Open-vocabulary detectors need nothing from you. Check what a prompt finds before trusting
+it: `neurofly detect-label footage.mp4 --detect "owl2:enemy" --preview check.mp4`. Scores
+are low by nature; 0.1 is a sensible cut for OWL, 0.25 for the others.
+
+When you want speed or accuracy, distil the open-vocabulary detector into a fast one, still
+without labelling anything by hand:
 
 ```powershell
 neurofly detect-label footage/*.mp4 --detect "owl2:enemy soldier,health pack" --out data/objects --every 5
-neurofly detect-train data/objects --out runs/det1 --epochs 30
+neurofly detect-train data/objects --out runs/det1 --backend dfine --epochs 30
 neurofly play --window "My App" --keys w,a,s,d --detect runs/det1
 ```
 
 `detect-label` runs the detector over footage and writes a dataset in the YOLO layout
-(`images/`, `labels/`, `classes.json`, `data.yaml`); `--preview check.mp4` draws what it
-found so you can judge the prompts. If some boxes are wrong, any YOLO-format labelling tool
-opens that folder and you fix only what matters. `detect-train` fine-tunes torchvision's
-SSDLite (BSD, real time on a CPU) and exports `detector.onnx`, which `onnx:runs/det1` runs
-through ONNX Runtime and which a consumer in another language can run the same way.
-
-`--backend yolo` on `detect-train`, and `yolo:weights.pt` as a spec, use Ultralytics YOLO
-instead (`pip install -e training[yolo]`). That package is AGPL-3.0; the rest of neurofly
-is not, so choose it knowingly.
+(`images/`, `labels/`, `classes.json`, `data.yaml`). If some boxes are wrong, any
+YOLO-format labelling tool opens that folder and you fix only what matters. `detect-train`
+fine-tunes the backend you choose: `ssdlite` (the small fast baseline, exports
+`detector.onnx`), `rtdetr` or `dfine` (strong, Apache) or `yolo` (Ultralytics, AGPL).
+The run directory is then the spec.
 
 Detections on a recording are computed once and cached next to the video. `--detection-grid`
 sets the cells per class, `--detection-gain` the drive, and `--include-detections` also

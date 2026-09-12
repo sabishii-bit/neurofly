@@ -30,9 +30,11 @@ protocol that covers both using the brain and training it.
   brain runs, from the command line or the API; replay videos with the spike raster beside
   the frames; a gain calibration sweep; a small `toy` brain with a designed path for tests.
 * **Objects on screen**: `--detect "owl2:enemy,health pack"` runs an open-vocabulary
-  detector (no training, no labelling) into a detection encoder on central-brain neurons;
-  `detect-label` and `detect-train` distil it into a fast detector exported to ONNX, with
-  YOLO as an opt-in backend.
+  detector (no training, no labelling) into a detection encoder on central-brain neurons.
+  Detectors are swappable backends behind one spec (OWLv2, Grounding DINO, YOLO-World,
+  YOLO11, RT-DETRv2, D-FINE, SSDLite, ONNX): `neurofly detect-list` shows them with their
+  licences, `detect-install` fetches one, and `detect-label` plus `detect-train` distil the
+  open-vocabulary detector into a fast fine-tuned one without hand labelling.
 * **Learning from footage**: an inverse dynamics model labels video that has no input log;
   corrections while the fly plays become new labels (DAgger); template matching and OCR
   helpers turn what is on screen into reward.
@@ -126,6 +128,14 @@ neurons are auditory. Engineered: the LIF parameters (uniform across neurons), t
 (sensors, pixels and sound onto neurons), and the map from readout rates to actions. Those
 maps are the parts you train. Read a fly that uses the PC as "a policy learned to do it
 through the connectome's dynamics", not as "the connectome knows how".
+
+## Licence
+
+AGPL-3.0. The project is built to plug in whichever detector or model gives the best
+result, and the strongest ones (Ultralytics YOLO, YOLO-World) come under the AGPL; a
+permissive licence here would only mislead. Every backend's own licence is listed by
+`neurofly detect-list`, and the artifacts, the protocol and the bindings work with any of
+them.
 
 ## Data and citations
 
