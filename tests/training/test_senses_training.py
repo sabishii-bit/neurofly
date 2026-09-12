@@ -32,7 +32,7 @@ def test_env_feeds_every_sense(tmp_path):
                            tastes="sugar,bitter", thermo="heat", include_odours=True,
                            include_tastes=True, include_thermo=True, task_obj=Feeling(),
                            dopamine_reward=20.0, plasticity=True, plasticity_target="mbon")
-    assert set(env.senses) == {"odours", "tastes", "thermo"}
+    assert set(env.senses) == {"odours", "tastes", "thermo", "pulses"}
     obs, _ = env.reset()
     assert np.allclose(obs[-4:], [1.0, 0.0, 0.0, 0.0])
     for _ in range(4):

@@ -52,6 +52,20 @@ class Populations:
         self.taste_types = self._by_type(self.gustatory)
         self.thermo = cx.select(type_re=r"^(?:TRN|HRN)_")            # temperature and humidity
         self.thermo_types = self._by_type(self.thermo)
+        # touch: the head's bristle and grooming mechanosensory neurons by subclass, and
+        # each leg's tactile neurons
+        self.touch_types: dict[str, np.ndarray] = {}
+        head_touch = cx.select(superclass="cb_sensory", class_="mechanosensory",
+                               subclass_re="bristle|grooming|pharyngeal|taste peg")
+        subs = cx.neurons["subclass"].values[head_touch]
+        for sub in sorted({str(s) for s in subs if s}):
+            self.touch_types[f"head:{sub}"] = head_touch[subs == sub]
+        for (t, side), idx in self.leg_tactile.items():
+            if len(idx):
+                self.touch_types[f"leg:{t}{side}"] = idx
+        self.giantfibre = cx.select(type_re=r"^GF")                  # the escape circuit
+        self.clock = cx.select(type_re=r"^(?:l-LNv|s-LNv|LNd|DN1|DN2|DN3|LPN)")   # circadian
+        self.visual_feedback = cx.select(superclass="visual_centrifugal")
         self.dopamine = cx.select(class_="DAN")
         self.ppl1 = cx.select(class_="DAN", type_re=r"^PPL1")      # punishment
         self.pam = cx.select(class_="DAN", type_re=r"^PAM")        # reward
@@ -68,6 +82,7 @@ class Populations:
             "motor": self.all_leg_motor, "descending": self.descending,
             "ascending": self.ascending, "cbmotor": self.cb_motor,
             "visual": self.visual_projection, "mbon": self.mbon, "compass": self.compass,
+            "clock": self.clock,
         }
 
     def _by_type(self, idx: np.ndarray) -> dict[str, np.ndarray]:
@@ -130,7 +145,10 @@ class Populations:
                      f"dopamine {len(self.dopamine)} (PPL1 {len(self.ppl1)}, PAM {len(self.pam)})")
         lines.append(f"  mushroom body: {len(self.kenyon)} Kenyon cells, {len(self.mbon)} output "
                      f"neurons; compass {len(self.compass)}; taste {len(self.gustatory)} in "
-                     f"{len(self.taste_types)} types; thermo/hygro {len(self.thermo)}")
+                     f"{len(self.taste_types)} types; thermo/hygro {len(self.thermo)}; touch "
+                     f"{sum(len(v) for v in self.touch_types.values())} in "
+                     f"{len(self.touch_types)} groups; giant fibre {len(self.giantfibre)}; clock "
+                     f"{len(self.clock)}; visual feedback {len(self.visual_feedback)}")
         ret = self.retina()
         lines.append(f"  retina columns: left {len(ret['L']['idx'])}, "
                      f"right {len(ret['R']['idx'])}; "

@@ -153,6 +153,23 @@ def build_thermo(pops: Populations, n_neurons: int, channels, **kw) -> Olfaction
     return build_sense(pops.thermo_types, n_neurons, channels, what="thermo/hygro", **kw)
 
 
+def build_touch(pops: Populations, n_neurons: int, channels, **kw) -> OlfactionEncoder:
+    """Touch channels onto the head's bristle and grooming neurons and the legs' tactile
+    neurons, one group per channel (a channel named like a group, e.g. ``leg:T1L`` or
+    ``head:grooming``, gets that group; others take groups in order)."""
+    groups = dict(pops.touch_types)
+    if not groups:
+        raise ValueError("no touch neurons in this connectome subset")
+    ordered = {}
+    rest = [g for g in groups if g not in channels]
+    for ch in channels:
+        if ch in groups:
+            ordered[ch] = groups[ch]
+        else:
+            ordered[ch] = groups[rest.pop(0) if rest else list(groups)[len(ordered) % len(groups)]]
+    return build_sense(ordered, n_neurons, channels, what="touch", **kw)
+
+
 def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", dt: float = 0.5,
                 brain_ms: float = 10.0, brain_gain: float = 1.0, warmup_ms: float = 20.0,
                 retina_mode: str = "auto", retina_gain: float = 15.0,
@@ -164,7 +181,8 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
                 odour_gain: float = 15.0, odour_adapt: float = 0.0,
                 include_odours: bool = False, taste_channels=None, taste_gain: float = 15.0,
                 include_tastes: bool = False, thermo_channels=None, thermo_gain: float = 15.0,
-                include_thermo: bool = False, plasticity_target: str = "readout",
+                include_thermo: bool = False, touch_channels=None, touch_gain: float = 15.0,
+                include_touch: bool = False, plasticity_target: str = "readout",
                 plasticity: bool = False, dopamine_punish: float = 0.0,
                 dopamine_reward: float = 0.0, policy=None,
                 name: str | None = None, meta: dict | None = None, device: str = "cpu",
@@ -191,13 +209,17 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
                                     device=device)
     if thermo_channels:
         thermo = build_thermo(pops, cx.n, list(thermo_channels), gain=thermo_gain, device=device)
+    touch = None
+    if touch_channels:
+        touch = build_touch(pops, cx.n, list(touch_channels), gain=touch_gain, device=device)
     readout_idx = pops.readout(readout) if isinstance(readout, str) else np.asarray(readout)
     punish = pops.ppl1 if len(pops.ppl1) else pops.dopamine
     config = ModelConfig(dt=dt, brain_ms=brain_ms, warmup_ms=warmup_ms,
                          include_frame=include_frame, frame_grid=tuple(frame_grid),
                          include_audio=include_audio, include_detections=include_detections,
                          include_odours=include_odours, include_tastes=include_tastes,
-                         include_thermo=include_thermo, plasticity=plasticity,
+                         include_thermo=include_thermo, include_touch=include_touch,
+                         plasticity=plasticity,
                          plasticity_target=plasticity_target,
                          dopamine_punish=dopamine_punish, dopamine_reward=dopamine_reward,
                          name=name or cx.name,
@@ -206,7 +228,7 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
     positions, known = cx.positions()
     return Model(brain, readout_idx=readout_idx, layout=layout, retina=retina,
                  audition=audition, detection=detection, olfaction=olfaction,
-                 gustation=gustation, thermo=thermo, policy=policy, config=config,
+                 gustation=gustation, thermo=thermo, touch=touch, policy=policy, config=config,
                  punish_idx=punish, reward_idx=pops.pam,
                  neuron_ids=cx.neurons["bodyId"].values,
                  neuron_types=cx.neurons["type"].values,

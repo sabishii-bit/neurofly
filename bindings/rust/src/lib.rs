@@ -92,6 +92,10 @@ pub struct Step {
     tastes: Option<Vec<f32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thermo: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    touch: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pulses: Option<std::collections::HashMap<String, f32>>,
 }
 
 /// One detected object for an artifact with a detection encoder: a class id (index into
@@ -110,7 +114,8 @@ impl Step {
     pub fn rgb(frame: &[u8], width: u32, height: u32) -> Step {
         Step { op: "step", frame: B64.encode(frame), width, height, format: None, audio: None,
                sample_rate: None, channels: None, reward: None, observe_only: None,
-               detections: None, odours: None, tastes: None, thermo: None }
+               detections: None, odours: None, tastes: None, thermo: None, touch: None,
+               pulses: None }
     }
 
     /// An encoded image (`"png"` or `"jpeg"`).
@@ -158,6 +163,18 @@ impl Step {
     /// Temperature and humidity channel values in [0, 1] (`thermo_channels` order).
     pub fn thermo(mut self, values: Vec<f32>) -> Step {
         self.thermo = Some(values);
+        self
+    }
+
+    /// Touch channel values in [0, 1] (`touch_channels` order).
+    pub fn touch(mut self, values: Vec<f32>) -> Step {
+        self.touch = Some(values);
+        self
+    }
+
+    /// One-step drives by population name, in mV (`giantfibre`, `clock`, `punish`, ...).
+    pub fn pulses(mut self, pulses: std::collections::HashMap<String, f32>) -> Step {
+        self.pulses = Some(pulses);
         self
     }
 

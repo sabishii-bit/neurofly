@@ -55,7 +55,9 @@ class Service(rpc.NeuroFlyServicer):
                                          detections=dets,
                                          odours=list(req.odours) if req.odours else None,
                                          tastes=list(req.tastes) if req.tastes else None,
-                                         thermo=list(req.thermo) if req.thermo else None)
+                                         thermo=list(req.thermo) if req.thermo else None,
+                                         touch=list(req.touch) if req.touch else None,
+                                         pulses=dict(req.pulses) or None)
         except Exception as e:
             return pb.StepReply(ok=False, error=f"{type(e).__name__}: {e}")
         reply = pb.StepReply(ok=True, t=r["t"], spikes=r["spikes"])
@@ -80,7 +82,8 @@ class Service(rpc.NeuroFlyServicer):
     def _body(self, req: pb.BodyRequest, observe: bool) -> pb.BodyReply:
         try:
             r = self.session.body_step_arrays(np.asarray(req.obs, np.float32), req.reward,
-                                              observe_only=observe or req.observe_only)
+                                              observe_only=observe or req.observe_only,
+                                              pulses=dict(req.pulses) or None)
         except Exception as e:
             return pb.BodyReply(ok=False, error=f"{type(e).__name__}: {e}")
         reply = pb.BodyReply(ok=True, t=r["t"], spikes=r["spikes"])
@@ -115,7 +118,8 @@ class Service(rpc.NeuroFlyServicer):
                             detection_classes=i.get("detection_classes") or [],
                             odour_channels=i.get("odour_channels") or [],
                             taste_channels=i.get("taste_channels") or [],
-                            thermo_channels=i.get("thermo_channels") or [])
+                            thermo_channels=i.get("thermo_channels") or [],
+                            touch_channels=i.get("touch_channels") or [])
 
     def Reset(self, request, context):
         self.session.model.reset()

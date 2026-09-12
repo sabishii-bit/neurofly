@@ -165,7 +165,7 @@ def _losses(logits: torch.Tensor, y: torch.Tensor, mask: torch.Tensor, pos_weigh
 def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, lr: float = 1e-2,
                     window: int = 8, l2: float = 1e-4, device: str = "cpu",
                     verbose: bool = False, detections=None, odours=None, tastes=None,
-                    thermo=None) -> dict:
+                    thermo=None, touch=None, pulses=None) -> dict:
     """Train the retina's input map and a linear head end to end on (frames, actions).
 
     ``frames``: list of RGB uint8 arrays; ``chunks``: list of audio chunks or None;
@@ -204,7 +204,7 @@ def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, l
         model.detection.reset()
     for enc, _, _ in model.senses():
         enc.reset()
-    given = {"odours": odours, "tastes": tastes, "thermo": thermo}
+    given = {"odours": odours, "tastes": tastes, "thermo": thermo, "touch": touch}
     signals, aud, extras = [], [], []
     for t in range(T):
         on, off = model.retina.signals(frames[t])
@@ -217,6 +217,10 @@ def train_surrogate(model: Model, frames, chunks, actions, *, epochs: int = 5, l
         for enc, kw, _ in model.senses():
             o = enc(given[kw][t] if given[kw] else None).to(device).detach()
             const = o if const is None else const + o
+        p = model.pulse_drive(pulses[t] if pulses else None)
+        if p is not None:
+            p = p.to(device).detach()
+            const = p if const is None else const + p
         aud.append(const)
         if n_extra:
             model._frame, model._chunk = frames[t], (chunks[t] if chunks else None)

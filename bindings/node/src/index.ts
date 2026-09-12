@@ -16,6 +16,7 @@ export interface Info {
   has_annotations: boolean; has_positions: boolean; populations: Record<string, number>;
   detection_classes: string[] | null;
   odour_channels: string[] | null; taste_channels: string[] | null; thermo_channels: string[] | null;
+  touch_channels: string[] | null;
 }
 
 export interface StepInput {
@@ -39,6 +40,9 @@ export interface StepInput {
   /** Taste and temperature/humidity channels, the same way (Info.taste_channels, thermo_channels). */
   tastes?: number[] | Record<string, number>;
   thermo?: number[] | Record<string, number>;
+  touch?: number[] | Record<string, number>;
+  /** One-step drives by population name, in mV: { giantfibre: 20 } startles the fly. */
+  pulses?: Record<string, number>;
 }
 
 /** One detected object: a class id or name from the artifact's classes, a box in fractions
@@ -148,6 +152,8 @@ export class NeuroFly {
     if (s.odours !== undefined) req.odours = s.odours;
     if (s.tastes !== undefined) req.tastes = s.tastes;
     if (s.thermo !== undefined) req.thermo = s.thermo;
+    if (s.touch !== undefined) req.touch = s.touch;
+    if (s.pulses !== undefined) req.pulses = s.pulses;
     return req;
   }
 

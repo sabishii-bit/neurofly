@@ -431,6 +431,11 @@ class Connectome:
             df.loc[i, "type"] = f"MBON{1 + k:02d}"
         for k, i in enumerate(cb[64:72]):                      # the heading circuit
             df.loc[i, "type"] = ["EPG", "PEG", "Delta7", "EL"][k % 4]
+        for k, i in enumerate(cb[72:76]):                      # the circadian clock
+            df.loc[i, "type"] = ["l-LNv", "s-LNv", "DN1pA", "LNd_b"][k % 4]
+        vnc_in = np.flatnonzero(superclass == "vnc_intrinsic")
+        for k, i in enumerate(vnc_in[:2]):                     # the giant fibre escape circuit
+            df.loc[i, "type"] = f"GFC{1 + k}"
         motor = np.flatnonzero(superclass == "vnc_motor")
         for k, i in enumerate(motor):
             t, side = LEGS[k % 6]
@@ -447,18 +452,20 @@ class Connectome:
         head = np.flatnonzero(superclass == "cb_sensory")
         glomeruli = ["ORN_DA1", "ORN_DL3", "ORN_VA1d", "ORN_DM2", "ORN_VM7d", "ORN_DC1"]
         for k, i in enumerate(head):
-            if k % 6 == 3:           # olfactory receptor neurons, a few glomeruli
-                df.loc[i, ["class", "type"]] = ["olfactory", glomeruli[(k // 6) % len(glomeruli)]]
-                continue
-            if k % 6 == 4:           # temperature and humidity receptors
-                df.loc[i, ["class", "type"]] = (["thermosensory", "TRN_VP2"] if (k // 6) % 2
+            role, n_role = k % 8, k // 8
+            if role == 3:            # olfactory receptor neurons, a few glomeruli
+                df.loc[i, ["class", "type"]] = ["olfactory", glomeruli[n_role % len(glomeruli)]]
+            elif role == 4:          # temperature and humidity receptors
+                df.loc[i, ["class", "type"]] = (["thermosensory", "TRN_VP2"] if n_role % 2
                                                 else ["hygrosensory", "HRN_VP4"])
-                continue
-            if k % 6 == 5:           # taste on the proboscis
-                df.loc[i, ["class", "type"]] = ["gustatory", f"LB1{'abc'[(k // 6) % 3]}"]
-                continue
-            sub = ["wind_gravity", "haltere", "auditory"][k % 3]
-            df.loc[i, ["class", "subclass"]] = ["mechanosensory", sub]
+            elif role == 5:          # taste on the proboscis
+                df.loc[i, ["class", "type"]] = ["gustatory", f"LB1{'abc'[n_role % 3]}"]
+            elif role in (6, 7):     # touch on the head: bristles and grooming
+                df.loc[i, ["class", "subclass"]] = \
+                    ["mechanosensory", "labellar bristle" if role == 6 else "grooming"]
+            else:
+                sub = ["wind_gravity", "haltere", "auditory"][role]
+                df.loc[i, ["class", "subclass"]] = ["mechanosensory", sub]
         df.loc[superclass == "descending_neuron", "subclass"] = "xn"
         # somas in a schematic brain: eyes left and right, head above the nerve cord;
         # sensory neurons have none, like the real data

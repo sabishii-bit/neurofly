@@ -10,6 +10,8 @@ scripts at it with ``--reward mypackage.module:MyTask`` (or
     done(frame, audio, info) -> bool
     odours(frame, audio, info) -> {"channel": value} | vector | None   (for --odours)
     tastes(frame, audio, info), thermo(frame, audio, info)               (--tastes, --thermo)
+    touch(frame, audio, info)                                             (--touch)
+    pulses(frame, audio, info) -> {"population": mV} | None   one-step drives by name
 
 ``PatchBrightness`` is a worked example that reads a rectangle of the screen
 (a health bar, a score, a target) and rewards its brightness.
@@ -48,6 +50,17 @@ class Task:
 
     def thermo(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
         """Temperature and humidity channel values for ``--thermo``, as ``odours``."""
+        return None
+
+    def touch(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
+        """Touch channel values for ``--touch`` (bristles, grooming, leg contact), as
+        ``odours``."""
+        return None
+
+    def pulses(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
+        """Drives for this step only, by population name: ``{"giantfibre": 20}`` startles
+        the fly, ``{"clock": 5}`` nudges the circadian neurons; any name the model lists
+        (``model.populations()``) works. None for nothing."""
         return None
 
 

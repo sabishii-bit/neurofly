@@ -85,6 +85,8 @@ PC options (the same commands):
 | `--taste-gain`, `--include-tastes` | 15, off | as for odours |
 | `--thermo` | none | temperature/humidity channels onto thermo- and hygrosensory neurons, from `thermo()` |
 | `--thermo-gain`, `--include-thermo` | 15, off | as for odours |
+| `--touch` | none | touch channels onto bristle, grooming and leg tactile neurons, from `touch()`; name a channel `head:grooming` or `leg:T1L` to pick that group |
+| `--touch-gain`, `--include-touch` | 15, off | as for odours |
 | `--dopamine-reward` | 0 | mV on the PAM dopamine neurons while reward is positive (`--dopamine-punish` is PPL1 while negative) |
 | `--plasticity-target` | readout | where `--plasticity` acts: `readout` (synapses onto the readout) or `mbon` (Kenyon cells to mushroom-body output neurons) |
 | `--dopamine-punish` | 0 | mV on PPL1 dopamine neurons while reward is negative |

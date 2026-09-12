@@ -1,10 +1,32 @@
 # neurofly
 
-The neurofly-kit repository: a fruit fly connectome run as a spiking network and wired to
-a world. Build the brain once
-in Python, then train it and run it from Python, Node, Rust, Go, or anything that can start
-a process: the controller travels as a plain artifact, and the runtime speaks a small
-protocol that covers both using the brain and training it.
+A kit for building things on a fruit fly's brain. The MaleCNS connectome runs as a spiking
+network; the kit wires it to senses and outputs by the connectome's own annotations, trains
+it, saves it as a portable artifact and serves it, so that a project that wants a fly brain
+in a game, a robot or an experiment starts at the interesting part instead of at the
+loading code.
+
+## What it is for
+
+Getting a connectome to do anything takes a lot of boilerplate before the first
+interesting result: reading the data files, turning annotations into populations, picking a
+simulation that steps 50,000 neurons in a millisecond, mapping pixels onto the right
+columnar neurons and sound onto the auditory ones, getting keyboard and mouse events out
+without locking yourself out of your own PC, keeping the result in a form another program
+can use. neurofly-kit is that boilerplate, done once, behind three interfaces:
+
+* **The `neurofly` command** for the Python side: build a brain with the senses you want
+  (`--detect`, `--odours`, `--tastes`, `--thermo`, `--touch`, `--audio`), record yourself,
+  train, watch, export.
+* **The artifact**, a directory of a manifest and flat arrays with no Python objects, which
+  is the whole trained brain and its encoders. It is the thing you ship.
+* **The runtime and its bindings**: `neurofly-core` serves an artifact over stdio, WebSocket
+  or gRPC, and the TypeScript, Rust and Go bindings wrap that, so the project that uses the
+  fly can be written in whatever language it is written in.
+  [Using neurofly from your own project](docs/from-your-project.md) is the step by step.
+
+It is a template as much as a library: the pieces are meant to be replaced. Write a `Task`
+for your game, swap the detector, add a sense, point the readout at other neurons.
 
 * **Brain**: the MaleCNS v1.0 connectome (165,122 traced neurons, 25.6 M synapses, brain and
   nerve cord) as a leaky integrate-and-fire network with the parameters of Shiu et al.,
@@ -36,10 +58,11 @@ protocol that covers both using the brain and training it.
   YOLO11, RT-DETRv2, D-FINE, SSDLite, ONNX): `neurofly detect-list` shows them with their
   licences, `detect-install` fetches one, and `detect-label` plus `detect-train` distil the
   open-vocabulary detector into a fast fine-tuned one without hand labelling.
-* **Smell, taste, temperature**: `--odours`, `--tastes` and `--thermo` drive the
-  olfactory, gustatory and thermo/hygrosensory receptor neurons from your Task or from the
-  detector's classes; the body's touch (leg contacts, wind, gravity) was already wired by
-  annotation.
+* **Smell, taste, temperature, touch**: `--odours`, `--tastes`, `--thermo` and `--touch`
+  drive the olfactory, gustatory, thermo/hygrosensory and bristle/grooming/leg-tactile
+  neurons from your Task or from the detector's classes; the body's own touch (leg
+  contacts, wind, gravity) is wired by annotation. `pulses` drive any named population
+  for one step: the giant fibre for a startle, the clock, the dopamine neurons.
 * **Learning where the fly learns**: `--dopamine-punish` and `--dopamine-reward` drive
   the PPL1 and PAM dopamine neurons, and `--plasticity-target mbon` puts the three-factor
   rule on the Kenyon-cell-to-MBON synapses, so punishment during a smell weakens it and

@@ -126,7 +126,8 @@ class Session:
                                            else None),
                         "taste_channels": (list(m.gustation.channels) if m.gustation
                                            else None),
-                        "thermo_channels": (list(m.thermo.channels) if m.thermo else None)})
+                        "thermo_channels": (list(m.thermo.channels) if m.thermo else None),
+                        "touch_channels": (list(m.touch.channels) if m.touch else None)})
         else:
             out.update({"has_audition": False, "sample_rate": None, "retina_grid": [],
                         "n_obs": m.n_obs,
@@ -135,15 +136,15 @@ class Session:
         return out
 
     def body_step_arrays(self, obs: np.ndarray, reward: float = 0.0,
-                         observe_only: bool = False) -> dict:
+                         observe_only: bool = False, pulses=None) -> dict:
         m = self.model
         if m.kind != "body":
             raise ValueError("body_step needs a body artifact")
         if observe_only or m.policy is None:
-            feats = m.observe(obs, reward)
+            feats = m.observe(obs, reward, pulses)
             out = {"ok": True, "t": m.t, "features": feats.tolist(), "spikes": m.last_spikes}
         else:
-            action, info = m.step(obs, reward)
+            action, info = m.step(obs, reward, pulses)
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"], "action": info["action"]}
         if m.last_probe is not None:
             out["probe"] = {"spikes": m.last_probe["spikes"].tolist(),
@@ -156,15 +157,17 @@ class Session:
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
                     reward: float = 0.0, observe_only: bool = False, detections=None,
-                    odours=None, tastes=None, thermo=None) -> dict:
+                    odours=None, tastes=None, thermo=None, touch=None, pulses=None) -> dict:
         m = self.model
         if m.kind != "pc":
             raise ValueError("step / observe need a PC artifact; use body_step for a body one")
         if observe_only or m.policy is None:
-            feats = m.observe(frame, audio, reward, detections, odours, tastes, thermo)
+            feats = m.observe(frame, audio, reward, detections, odours, tastes, thermo, touch,
+                              pulses)
             out = {"ok": True, "t": m.t, "features": feats.tolist(), "spikes": m.last_spikes}
         else:
-            state, info = m.step(frame, audio, reward, detections, odours, tastes, thermo)
+            state, info = m.step(frame, audio, reward, detections, odours, tastes, thermo,
+                                 touch, pulses)
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"],
                    "action": info["action"], "held": info["held"]}
             out.update(state.to_dict())
@@ -221,14 +224,16 @@ class Session:
                 obs = np.asarray(req["obs"], dtype=np.float32)
                 return self.body_step_arrays(obs, float(req.get("reward", 0.0)),
                                              observe_only=(op == "body_observe")
-                                             or bool(req.get("observe_only")))
+                                             or bool(req.get("observe_only")),
+                                             pulses=req.get("pulses"))
             if op in ("step", "observe"):
                 observe = (op == "observe") or bool(req.get("observe_only"))
                 return self.step_arrays(decode_frame(req), decode_audio(req),
                                         float(req.get("reward", 0.0)), observe_only=observe,
                                         detections=decode_detections(req),
                                         odours=decode_odours(req), tastes=req.get("tastes"),
-                                        thermo=req.get("thermo"))
+                                        thermo=req.get("thermo"), touch=req.get("touch"),
+                                        pulses=req.get("pulses"))
             if op == "set_policy":
                 m.policy = self.policy_from(req)
                 return {"ok": True, "type": m.policy.kind}

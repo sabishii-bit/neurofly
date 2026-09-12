@@ -46,6 +46,7 @@ PC_ARGS = ["fps", "window", "region", "monitor", "audio", "keys", "buttons", "mo
            "detect", "detection_grid", "detection_gain", "include_detections",
            "odours", "odour_gain", "odour_adapt", "include_odours",
            "tastes", "taste_gain", "include_tastes", "thermo", "thermo_gain", "include_thermo",
+           "touch", "touch_gain", "include_touch",
            "dopamine_reward", "plasticity_target",
            "dopamine_punish"]
 ENV_ARGS = BODY_ARGS + PC_ARGS
@@ -157,6 +158,9 @@ def sense_sources(model, task=None) -> dict:
             out["tastes"] = lambda frame, chunk, info, dets: task.tastes(frame, chunk, info)
         if model.thermo is not None:
             out["thermo"] = lambda frame, chunk, info, dets: task.thermo(frame, chunk, info)
+        if model.touch is not None:
+            out["touch"] = lambda frame, chunk, info, dets: task.touch(frame, chunk, info)
+        out["pulses"] = lambda frame, chunk, info, dets: task.pulses(frame, chunk, info)
     return out
 
 
@@ -186,7 +190,8 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                   include_detections: bool = False, odours=None, odour_gain: float = 15.0,
                   odour_adapt: float = 0.0, include_odours: bool = False, tastes=None,
                   taste_gain: float = 15.0, include_tastes: bool = False, thermo=None,
-                  thermo_gain: float = 15.0, include_thermo: bool = False,
+                  thermo_gain: float = 15.0, include_thermo: bool = False, touch=None,
+                  touch_gain: float = 15.0, include_touch: bool = False,
                   dopamine_reward: float = 0.0, plasticity_target: str = "readout",
                   sample_rate: int = 16000, name: str | None = None, policy=None,
                   **_ignored):
@@ -206,6 +211,7 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
     odour_adapt = 0.0 if odour_adapt is None else odour_adapt
     taste_gain = 15.0 if taste_gain is None else taste_gain
     thermo_gain = 15.0 if thermo_gain is None else thermo_gain
+    touch_gain = 15.0 if touch_gain is None else touch_gain
     dopamine_reward = 0.0 if dopamine_reward is None else dopamine_reward
     dopamine_punish = 0.0 if dopamine_punish is None else dopamine_punish
     plasticity_target = plasticity_target or "readout"
@@ -223,7 +229,9 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                        include_odours=include_odours, taste_channels=parse_names(tastes),
                        taste_gain=taste_gain, include_tastes=include_tastes,
                        thermo_channels=parse_names(thermo), thermo_gain=thermo_gain,
-                       include_thermo=include_thermo, plasticity_target=plasticity_target,
+                       include_thermo=include_thermo, touch_channels=parse_names(touch),
+                       touch_gain=touch_gain, include_touch=include_touch,
+                       plasticity_target=plasticity_target,
                        dopamine_punish=dopamine_punish, dopamine_reward=dopamine_reward,
                        policy=policy, name=name,
                        meta={"brain": brain, "subset": subset or default_subset(task),
@@ -412,6 +420,12 @@ def add_env_args(p, *, brain_default: str = "none",
                         "filled by your Task's thermo()")
     g.add_argument("--thermo-gain", type=float, default=15.0)
     g.add_argument("--include-thermo", action="store_true")
+    g.add_argument("--touch", default=None, metavar="CHANNELS",
+                   help="touch channels onto bristle, grooming and leg tactile neurons, filled "
+                        "by your Task's touch(); name a channel like a group (head:grooming, "
+                        "leg:T1L) to pick it")
+    g.add_argument("--touch-gain", type=float, default=15.0)
+    g.add_argument("--include-touch", action="store_true")
     g.add_argument("--dopamine-reward", type=float, default=0.0,
                    help="mV of drive on the PAM dopamine neurons while reward is positive")
     g.add_argument("--plasticity-target", default="readout", choices=["readout", "mbon"],

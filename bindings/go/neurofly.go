@@ -56,6 +56,8 @@ type Step struct {
 	Odours     []float32   // odour channel values in [0, 1], in the artifact's channel order
 	Tastes     []float32   // taste channel values, the same way
 	Thermo     []float32   // temperature and humidity channel values, the same way
+	Touch      []float32   // touch channel values, the same way
+	Pulses     map[string]float32 // one-step drives by population name, mV (giantfibre, clock, ...)
 }
 
 // Detection is one detected object: a class id (index into the artifact's detection
@@ -221,6 +223,12 @@ func (c *Client) stepRequest(op string, s Step) map[string]any {
 	}
 	if len(s.Thermo) > 0 {
 		req["thermo"] = s.Thermo
+	}
+	if len(s.Touch) > 0 {
+		req["touch"] = s.Touch
+	}
+	if len(s.Pulses) > 0 {
+		req["pulses"] = s.Pulses
 	}
 	return req
 }

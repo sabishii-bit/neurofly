@@ -51,7 +51,7 @@ annotations; they differ in the encoders and the output layout.
 | `audition` | `params` and `tables` of the sound encoder, or `null` |
 | `detection` | `params` and `tables` of the detected-object encoder, or `null` (below) |
 | `olfaction` | `params` and `tables` of the odour encoder, or `null` (below) |
-| `gustation`, `thermo` | the taste and temperature/humidity encoders, the same shape as `olfaction` (`tastes` and `thermo` on the step) |
+| `gustation`, `thermo`, `touch` | the taste, temperature/humidity and touch encoders, the same shape as `olfaction` (`tastes`, `thermo`, `touch` on the step) |
 | `reward.indices` | int64 array: neurons driven while reward is positive (PAM dopamine), or `null` |
 | `layout` | which controls the action vector holds (below) |
 | `features.n`, `actions.n` | feature and action vector lengths |
@@ -72,7 +72,7 @@ annotations; they differ in the encoders and the output layout.
 | `include_frame`, `frame_grid` | append a `rows x cols` luminance grid of the frame to the features |
 | `include_audio` | append the audio band levels to the features |
 | `include_detections` | append the detection grids to the features |
-| `include_odours`, `include_tastes`, `include_thermo` | append the channel values to the features |
+| `include_odours`, `include_tastes`, `include_thermo`, `include_touch` | append the channel values to the features |
 | `plasticity`, `plasticity_lr`, `plasticity_target`, `dopamine_punish`, `dopamine_reward` | optional online learning; a consumer may ignore them |
 
 ### brain
@@ -219,12 +219,12 @@ WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
 |---|---|
 | `{"op": "info"}` | name, `n_neurons`, `n_features`, `n_actions`, `controls`, `layout`, `brain_ms`, `has_policy`, `has_audition`, `sample_rate`, `retina_grid`, `detection_classes` (or null), `odour_channels` (or null) |
 | `{"op": "reset"}` | `{"ok": true}` |
-| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool, "detections"?: [{"class": id or name, "box": [x0, y0, x1, y1], "score"?: s}, ...], "odours"?: [v, ...] or {"channel": v}, "tastes"?: ..., "thermo"?: ...}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
+| `{"op": "step", "frame": b64, "width": w, "height": h, "format"?: "rgb"\|"png"\|"jpeg", "audio"?: b64, "sample_rate"?: n, "channels"?: c, "reward"?: r, "observe_only"?: bool, "detections"?: [{"class": id or name, "box": [x0, y0, x1, y1], "score"?: s}, ...], "odours"?: [v, ...] or {"channel": v}, "tastes"?: ..., "thermo"?: ..., "touch"?: ..., "pulses"?: {"population": mV}}` | `{"ok": true, "t", "spikes", "action", "held", "keys", "buttons", "dx", "dy", "scroll"}`; with `observe_only` or without a policy: `{"ok": true, "t", "spikes", "features"}` |
 | `{"op": "observe", ...the step fields...}` | `{"ok": true, "t", "spikes", "features"}`: the feature vector, no policy involved |
 | `{"op": "set_policy", "type": "linear", "W": [[...]], "b": [...]}` | installs a linear policy (`W` is `actions x features`); `{"ok": true, "type": "linear"}` |
 | `{"op": "set_policy", "type": "mlp", "layers": [{"W", "b"}, ...], "activation"?, "obs_mean"?, "obs_var"?, "obs_clip"?, "obs_eps"?}` | installs an MLP policy |
 | `{"op": "save", "path": dir, "name"?: str, "extra"?: {}}` | writes the current model as an artifact; `{"ok": true, "path"}` |
-| `{"op": "body_step", "obs": [...], "reward"?: r, "observe_only"?: bool}` | body artifacts: `{"ok": true, "t", "spikes", "action"}` with one actuator command per entry, or `features` without a policy |
+| `{"op": "body_step", "obs": [...], "reward"?: r, "observe_only"?: bool, "pulses"?: {"population": mV}}` | body artifacts: `{"ok": true, "t", "spikes", "action"}` with one actuator command per entry, or `features` without a policy |
 | `{"op": "body_observe", "obs": [...]}` | body artifacts: the feature vector |
 | `{"op": "stimulate", <selection>, "mv": 20}` | adds 20 mV of drive to the selected neurons on every brain step; `{"ok": true, "n"}` |
 | `{"op": "silence", <selection>}` | the selected neurons stop spiking; `{"ok": true, "n"}` |
@@ -253,8 +253,9 @@ service defined in `core/src/neurofly_core/rpc/neurofly.proto`: `Info`, `Reset`,
 `Activity` and `Positions`. `StepRequest.detections` carries detected objects
 (`Detection`: `class_id`, `x0`, `y0`, `x1`, `y1`, `score`) and `Info.detection_classes`
 the classes an artifact expects; `StepRequest.odours`, `tastes` and `thermo` carry the
-channel values (empty keeps the last) and `Info.odour_channels`, `taste_channels` and
-`thermo_channels` their names.
+channel values (empty keeps the last) and `Info.odour_channels`, `taste_channels`,
+`thermo_channels` and `touch_channels` their names; `pulses` (a map of population name to
+mV) drives named populations for that step, on `StepRequest` and `BodyRequest`.
 `Info.kind` says which kind is loaded; `Info.n_obs` and `Info.obs_json` describe a body
 artifact's observation vector. Frames and audio are `bytes` (no
 base64); a linear policy is one `Layer` with `w` row-major. Generate a client for any

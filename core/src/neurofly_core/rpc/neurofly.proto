@@ -50,6 +50,7 @@ message InfoReply {
   repeated string odour_channels = 17;      // PC: the odour channels an olfaction encoder expects
   repeated string taste_channels = 18;      // PC: the taste channels
   repeated string thermo_channels = 19;     // PC: the temperature/humidity channels
+  repeated string touch_channels = 20;      // PC: the touch channels
 }
 
 message StepRequest {
@@ -67,6 +68,8 @@ message StepRequest {
                                         // empty keeps the last odours
   repeated float tastes = 12;           // one value per Info.taste_channels; empty keeps the last
   repeated float thermo = 13;           // one value per Info.thermo_channels; empty keeps the last
+  repeated float touch = 14;            // one value per Info.touch_channels; empty keeps the last
+  map<string, float> pulses = 15;       // one-step drives by population name, mV
 }
 
 message Detection {
@@ -119,6 +122,7 @@ message BodyRequest {
   repeated float obs = 1;      // the body observation, in the artifact's layout
   double reward = 2;
   bool observe_only = 3;
+  map<string, float> pulses = 4;   // one-step drives by population name, mV
 }
 
 message BodyReply {

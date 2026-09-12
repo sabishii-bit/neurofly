@@ -158,16 +158,21 @@ class BodyModel(BrainModel):
             parts.append(np.asarray(self._obs, np.float32))
         return np.concatenate(parts).astype(np.float32)
 
-    def observe(self, obs: np.ndarray, reward: float = 0.0) -> np.ndarray:
-        """Drive the sensory neurons with a body observation, run the brain for one
-        control interval, return the feature vector."""
+    def observe(self, obs: np.ndarray, reward: float = 0.0, pulses=None) -> np.ndarray:
+        """Drive the sensory neurons with a body observation (plus ``pulses``: one-step
+        drives on named populations), run the brain for one control interval, return
+        the feature vector."""
         self._obs = np.asarray(obs, dtype=np.float32)
-        self._run(self.proprio(self._obs), reward)
+        drive = self.proprio(self._obs)
+        p = self.pulse_drive(pulses)
+        if p is not None:
+            drive = drive + p
+        self._run(drive, reward)
         return self.features()
 
-    def step(self, obs: np.ndarray, reward: float = 0.0) -> tuple[np.ndarray, dict]:
+    def step(self, obs: np.ndarray, reward: float = 0.0, pulses=None) -> tuple[np.ndarray, dict]:
         """Observation in, actuator commands in [-1, 1] out (the layout says which)."""
-        features = self.observe(obs, reward)
+        features = self.observe(obs, reward, pulses)
         action = self.act(features)
         info = {"t": self.t, "spikes": self.last_spikes, "action": action.tolist()}
         if self.last_probe is not None:

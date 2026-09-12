@@ -47,9 +47,10 @@ populations the interfaces found.
 ### Populations
 
 The named populations a model exposes (`--probe name=...`, `--stimulate name=...`):
-`readout`, `retina`, `audition`, `detection`, `olfaction`, `gustation`, `thermo`, `punish`
-(PPL1), `reward` (PAM), `kenyon`, `mbon` and `compass`, the last five when the artifact
-has type annotations.
+`readout`, `retina`, `audition`, `detection`, `olfaction`, `gustation`, `thermo`, `touch`,
+`punish` (PPL1), `reward` (PAM), `kenyon`, `mbon`, `compass`, `giantfibre` and `clock`, the
+last seven when the artifact has type annotations. `pulses` on a step drive any of them
+for that step.
 
 `neurofly_training.data.populations` names the neuron groups the interfaces talk to:
 

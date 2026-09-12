@@ -180,6 +180,21 @@ water" is a temperature. `--taste-gain`, `--thermo-gain`, `--include-tastes` and
 `--include-thermo` work as for odours, and the protocol carries `tastes` and `thermo` on
 the step like `odours`.
 
+### Touch
+
+`--touch hit,ground` drives the head's bristle and grooming mechanosensory neurons and
+the legs' tactile neurons from your Task's `touch()` hook. Name a channel like a group to
+pick it (`head:grooming`, `head:labellar bristle`, `leg:T1L`); other names take groups in
+order. On the body, leg contact already reaches the tactile neurons by annotation.
+
+### Pulses: the giant fibre, the clock, anything by name
+
+A Task's `pulses()` hook (or `pulses` on the step request) drives a named population for
+one step: `{"giantfibre": 20}` fires the escape circuit, the fly's hardwired startle, when
+the game hits you; `{"clock": 5}` nudges the circadian neurons; `{"punish": 15}` is a
+manual jolt of dopamine. Any name in `model.populations()` works, including `kenyon`,
+`mbon`, `compass` and every sense's targets.
+
 ### Reward and punishment, where the fly has them
 
 The fly's dopamine comes in two populations: the PPL1 cluster signals punishment and the

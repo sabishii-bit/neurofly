@@ -7,7 +7,7 @@ An artifact is a directory:
     brain/*.bin          the synapses (CSC by presynaptic neuron: indptr, indices, values in mV)
     readout/ policy/ punish/ neurons/        shared by both kinds
     retina/ audition/ detection/             kind "pc":   frames, sound, objects in
-    olfaction/ gustation/ thermo/            kind "pc":   odours, tastes, temperature in
+    olfaction/ gustation/ thermo/ touch/     kind "pc":   odours, tastes, temperature, touch in
     reward/                                  the reward dopamine neurons (optional)
     proprio/                                 kind "body": a body observation in, actuators out
 
@@ -142,7 +142,7 @@ def save_model(model: BrainModel, path: str, extra: dict | None = None) -> str:
         if model.detection is not None:
             manifest["detection"] = {"params": model.detection.params(),
                                      "tables": w.arrays("detection", model.detection.tables())}
-        for section in ("olfaction", "gustation", "thermo"):
+        for section in ("olfaction", "gustation", "thermo", "touch"):
             enc = getattr(model, section)
             manifest[section] = None
             if enc is not None:
@@ -242,7 +242,7 @@ def load_model(path: str, device: str = "cpu", backend: str = "auto") -> BrainMo
                                                      r.arrays(m["detection"]["tables"]),
                                                      device=device)
         senses = {}
-        for section in ("olfaction", "gustation", "thermo"):
+        for section in ("olfaction", "gustation", "thermo", "touch"):
             senses[section] = None
             if m.get(section):
                 senses[section] = OlfactionEncoder.from_tables(n, m[section]["params"],
@@ -338,7 +338,7 @@ def validate(path: str) -> list[str]:
                 check(v, f"detection.{k}", max_index=n if k == "targets" else None)
             if not d["params"].get("classes"):
                 problems.append("detection: no classes")
-        for section in ("olfaction", "gustation", "thermo"):
+        for section in ("olfaction", "gustation", "thermo", "touch"):
             if m.get(section):
                 o = m[section]
                 for k, v in o["tables"].items():
@@ -388,6 +388,8 @@ def describe(path: str) -> str:
                                      if m.get("gustation") else "no"),
                   "  thermo: " + (", ".join(m["thermo"]["params"]["channels"])
                                   if m.get("thermo") else "no"),
+                  "  touch: " + (", ".join(m["touch"]["params"]["channels"])
+                                 if m.get("touch") else "no"),
                   f"  features: {m['features']['n']}; actions: {m['actions']['n']} "
                   f"{ControlLayout.from_dict(m['layout']).names}"]
     else:

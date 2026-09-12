@@ -58,7 +58,8 @@ pip-install its own requirements while running; neurofly turns that off (it once
 this project's pinned numpy), so install through `detect-install` or the extra instead.
 | training | `dev` | pytest, pytest-cov, ruff, grpcio-tools | tests, coverage, lint, regenerating the gRPC stubs |
 
-A runtime-only machine: `pip install -e core[pc,grpc]`. A full development machine:
+A runtime-only machine: `pip install -e core[pc,grpc]` (see [From your own
+project](from-your-project.md) for what a TypeScript, Rust or Go project needs). A full development machine:
 `pip install -e core[pc,ws,grpc,gamepad] -e training[flybody,ocr,dev]`.
 
 ### The body: flybody and MuJoCo

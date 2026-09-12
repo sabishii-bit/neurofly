@@ -55,6 +55,7 @@ class ModelConfig:
     include_odours: bool = False    # PC: append the odour channels to the features
     include_tastes: bool = False    # PC: append the taste channels to the features
     include_thermo: bool = False    # PC: append the temperature/humidity channels
+    include_touch: bool = False     # PC: append the touch channels
     include_proprio: bool = False   # body: append the raw observation to the features
     plasticity: bool = False        # reward acts as dopamine on a set of synapses
     plasticity_lr: float = 1e-3
@@ -153,11 +154,28 @@ class BrainModel:
             named["reward"] = self.reward_idx
         if self.neuron_types is not None:
             for name, pat in (("kenyon", "^KC"), ("mbon", "^MBON"),
-                              ("compass", r"^(?:EPG|PEN|PEG|Delta7|EL)\b")):
+                              ("compass", r"^(?:EPG|PEN|PEG|Delta7|EL)\b"),
+                              ("giantfibre", "^GF"),
+                              ("clock", r"^(?:l-LNv|s-LNv|LNd|DN1|DN2|DN3|LPN)")):
                 idx = self._by_type(pat)
                 if len(idx):
                     named[name] = idx
         return named
+
+    def pulse_drive(self, pulses) -> torch.Tensor | None:
+        """One observation's worth of extra drive on named populations:
+        ``{"giantfibre": 20, "clock": 5}`` in mV. None or empty -> None."""
+        if not pulses:
+            return None
+        named = self.populations()
+        total = None
+        for name, mv in dict(pulses).items():
+            if name not in named:
+                raise ValueError(f"unknown population {name!r} for a pulse; "
+                                 f"choose from {sorted(named)}")
+            d = self.brain.drive(named[name], float(mv))
+            total = d if total is None else total + d
+        return total
 
     def _by_type(self, pattern: str) -> np.ndarray:
         """Neurons whose type matches, straight from the annotations (no named
@@ -302,6 +320,7 @@ class Model(BrainModel):
                  olfaction: OlfactionEncoder | None = None,
                  gustation: OlfactionEncoder | None = None,
                  thermo: OlfactionEncoder | None = None,
+                 touch: OlfactionEncoder | None = None,
                  policy=None, config: ModelConfig | None = None, punish_idx=None,
                  neuron_ids=None, neuron_types=None, neuron_superclass=None,
                  neuron_positions=None, positions_known=None, reward_idx=None):
@@ -316,6 +335,8 @@ class Model(BrainModel):
         self.olfaction = olfaction
         self.gustation = gustation
         self.thermo = thermo
+        self.touch = touch
+        self.include_touch = self.config.include_touch and touch is not None
         self.include_audio = self.config.include_audio and audition is not None
         self.include_detections = self.config.include_detections and detection is not None
         self.include_odours = self.config.include_odours and olfaction is not None
@@ -344,7 +365,8 @@ class Model(BrainModel):
         out = []
         for enc, kw, inc in ((self.olfaction, "odours", self.include_odours),
                              (self.gustation, "tastes", self.include_tastes),
-                             (self.thermo, "thermo", self.include_thermo)):
+                             (self.thermo, "thermo", self.include_thermo),
+                             (self.touch, "touch", self.include_touch)):
             if enc is not None:
                 out.append((enc, kw, inc))
         return out
@@ -361,8 +383,8 @@ class Model(BrainModel):
         if self.detection is not None:
             named["detection"] = self.detection.targets
         for enc, kw, _ in self.senses():
-            named[{"odours": "olfaction", "tastes": "gustation", "thermo": "thermo"}[kw]] = \
-                enc.targets
+            named[{"odours": "olfaction", "tastes": "gustation", "thermo": "thermo",
+                   "touch": "touch"}[kw]] = enc.targets
         return named
 
     def reset(self) -> None:
@@ -391,7 +413,7 @@ class Model(BrainModel):
 
     def observe(self, frame: np.ndarray, audio: np.ndarray | None = None,
                 reward: float = 0.0, detections=None, odours=None, tastes=None,
-                thermo=None) -> np.ndarray:
+                thermo=None, touch=None, pulses=None) -> np.ndarray:
         """Drive the neurons with a frame (RGB uint8), the sound since the last
         observation and, when the model has the encoders, the objects a detector found
         in the frame and the odour, taste and temperature channels; run the brain for
@@ -405,16 +427,20 @@ class Model(BrainModel):
             drive = drive + self.audition(audio)
         if self.detection is not None:
             drive = drive + self.detection(detections)
-        given = {"odours": odours, "tastes": tastes, "thermo": thermo}
+        given = {"odours": odours, "tastes": tastes, "thermo": thermo, "touch": touch}
         for enc, kw, _ in self.senses():
             drive = drive + enc(given[kw])
+        p = self.pulse_drive(pulses)
+        if p is not None:
+            drive = drive + p
         self._run(drive, reward)
         return self.features()
 
     def step(self, frame: np.ndarray, audio: np.ndarray | None = None,
              reward: float = 0.0, detections=None, odours=None, tastes=None,
-             thermo=None) -> tuple[ControlState, dict]:
-        features = self.observe(frame, audio, reward, detections, odours, tastes, thermo)
+             thermo=None, touch=None, pulses=None) -> tuple[ControlState, dict]:
+        features = self.observe(frame, audio, reward, detections, odours, tastes, thermo,
+                                touch, pulses)
         action = self.act(features)
         state = self.layout.decode(action)
         info = {"t": self.t, "spikes": self.last_spikes, "action": action.tolist(),
