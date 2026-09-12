@@ -11,3 +11,11 @@ filterwarnings = [
     "ignore:Sparse CSR tensor support is in beta:UserWarning",
     "ignore:Sparse invariant checks are implicitly disabled:UserWarning",
 ]
+
+[tool.coverage.run]
+source = ["neurofly_core", "neurofly_training"]
+omit = ["*/rpc/neurofly_pb2*.py", "*/__main__.py"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true

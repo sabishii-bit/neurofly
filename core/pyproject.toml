@@ -25,6 +25,8 @@ ws = ["websockets"]
 grpc = ["grpcio"]
 # a virtual Xbox controller (Windows, ViGEmBus driver)
 gamepad = ["vgamepad"]
+# reading video files (VideoFile); the training package always has this
+video = ["imageio", "imageio-ffmpeg"]
 
 [project.scripts]
 neurofly-core = "neurofly_core.cli:main"

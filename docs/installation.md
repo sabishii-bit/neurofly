@@ -46,9 +46,10 @@ Extras are optional groups of dependencies; add them in the brackets, comma-sepa
 | core | `ws` | websockets | `neurofly-core serve --ws` |
 | core | `grpc` | grpcio | `neurofly-core serve --grpc` |
 | core | `gamepad` | vgamepad | the virtual controller (plus the ViGEmBus driver) |
+| core | `video` | imageio, imageio-ffmpeg | reading video files without the training package |
 | training | `flybody` | the MuJoCo fruit fly, from GitHub | body tasks: `--task forward`, `--task ball`, `export-body` |
 | training | `ocr` | pytesseract | `NumberOnScreen` and `read_number` (plus a Tesseract install) |
-| training | `dev` | pytest, ruff, grpcio-tools | tests, lint, regenerating the gRPC stubs |
+| training | `dev` | pytest, pytest-cov, ruff, grpcio-tools | tests, coverage, lint, regenerating the gRPC stubs |
 
 A runtime-only machine: `pip install -e core[pc,grpc]`. A full development machine:
 `pip install -e core[pc,ws,grpc,gamepad] -e training[flybody,ocr,dev]`.

@@ -41,18 +41,18 @@ def main():
     brain.run(20, drive)  # warm-up (and compile, for the event backend)
     if a.device.startswith("cuda"):
         torch.cuda.synchronize()
-    t0 = time.time()
+    t0 = time.perf_counter()
     counts = brain.run(a.steps, drive)
     if a.device.startswith("cuda"):
         torch.cuda.synchronize()
-    per_step = (time.time() - t0) / a.steps
+    per_step = max(time.perf_counter() - t0, 1e-9) / a.steps
     substeps = 2.0 / a.dt  # the body's 2 ms control step
     print(f"{per_step * 1000:.2f} ms per brain step  ->  "
           f"{1 / (per_step * substeps):.1f} body control steps/s "
           f"(x{1 / (per_step * substeps) / 500:.3f} real time); "
           f"{1 / (per_step * 10 / a.dt):.1f} PC steps/s at 10 ms of brain per step")
     active = int((counts > 0).sum())
-    rate = counts[counts > 0].mean() / (a.steps * a.dt) * 1000
+    rate = counts[counts > 0].mean() / (a.steps * a.dt) * 1000 if active else 0.0
     print(f"{active:,} neurons spiked in {a.steps * a.dt:.0f} ms of sim; "
           f"mean rate of active neurons {rate:.1f} Hz")
 

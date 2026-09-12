@@ -34,3 +34,5 @@ bindings/node/node_modules/
 bindings/node/dist/
 bindings/node/package-lock.json
 /assets/
+/.coverage
+/htmlcov/

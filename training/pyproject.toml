@@ -31,7 +31,7 @@ flybody = ["flybody @ git+https://github.com/TuragaLab/flybody.git"]
 # reading numbers off the screen for reward (also needs a Tesseract install)
 ocr = ["pytesseract"]
 # tests, lint, and regenerating the gRPC stubs
-dev = ["pytest", "ruff", "grpcio-tools"]
+dev = ["pytest", "pytest-cov", "ruff", "grpcio-tools"]
 
 [project.scripts]
 neurofly = "neurofly_training.cli:main"
