@@ -1,0 +1,74 @@
+{
+  "format": "neurofly-atlas",
+  "version": 1,
+  "dataset": "male-cns:v1.0",
+  "connectome": "malecns:brain",
+  "n": 124658,
+  "unit": "micrometre",
+  "frame": "the MaleCNS volume: x right, y down, z front to back (as somaLocation, times 0.008 um per voxel)",
+  "positions": {
+    "file": "positions.bin",
+    "dtype": "float32",
+    "shape": [
+      124658,
+      3
+    ]
+  },
+  "ids": {
+    "file": "ids.bin",
+    "dtype": "int64",
+    "shape": [
+      124658
+    ]
+  },
+  "groups": {
+    "file": "groups.bin",
+    "dtype": "uint8",
+    "shape": [
+      124658
+    ],
+    "names": [
+      "optic",
+      "central",
+      "descending",
+      "vnc",
+      "other"
+    ],
+    "colours": [
+      "#4fa3ff",
+      "#ffc857",
+      "#ff5da2",
+      "#7ee787",
+      "#9aa0a6"
+    ],
+    "counts": {
+      "optic": 90807,
+      "central": 32170,
+      "descending": 1308,
+      "vnc": 0,
+      "other": 373
+    }
+  },
+  "superclass": "superclass.json",
+  "bounds": {
+    "min": [
+      19.743999481201172,
+      38.06399917602539,
+      81.23200225830078
+    ],
+    "max": [
+      749.343994140625,
+      525.2000122070312,
+      1050.6639404296875
+    ]
+  },
+  "known_only": true,
+  "known": null,
+  "sha256": {
+    "positions.bin": "94928f93c79e7f01836e73d5c87188ae1d2d3b2c89c6e444800016b779db46b6",
+    "ids.bin": "bf9d783e79daf615d3f023bed279aeea55daa0319729c72c19688a4b1d1e4eea",
+    "groups.bin": "0fd9fbedf46b56b629d84713ff55b470d2078c78af76030cd83f512271130a64",
+    "superclass.json": "9b90dd7cec66636e9243cbf166e0b2e531d614cd28e189493a34485dcf576fc5"
+  },
+  "licence": "MaleCNS v1.0 connectome, CC BY 4.0: FlyEM Project Team (HHMI Janelia), MRC LMB Cambridge, Google Research; see NOTICE.md"
+}

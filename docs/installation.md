@@ -104,7 +104,8 @@ Nothing else in the project touches the network.
 ## Check the install
 
 ```powershell
-python -m pytest -q                # about 45 seconds; body and real-data tests skip if their inputs are missing
+python -m pytest -q                # about three minutes; real-data tests skip if their inputs are missing
+                                   # (the same suite, lint and the bindings run in CI on every push)
 neurofly list                      # body tasks, PC tasks, connectome subsets
 neurofly inspect --subset central  # the brain and its populations
 neurofly bench --subset central    # how fast it steps on this machine

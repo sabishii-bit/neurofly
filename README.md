@@ -1,5 +1,7 @@
 # neurofly
 
+[![ci](https://github.com/sabishii-bit/neurofly-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/sabishii-bit/neurofly-kit/actions/workflows/ci.yml)
+
 A kit for building things on a fruit fly's brain. The MaleCNS connectome runs as a spiking
 network; the kit wires it to senses and outputs by the connectome's own annotations, trains
 it, saves it as a portable artifact and serves it, so that a project that wants a fly brain

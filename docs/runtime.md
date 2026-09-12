@@ -238,14 +238,22 @@ returns the map. From Python: `model.watch_activity(True)` then `model.last_acti
 `examples/workbench.html` puts three panels on one timeline: what the fly saw (a video),
 the brain atlas lit by its activity, and the body, with play, pause, scrub, speed and loop.
 It takes neurofly's own files (`--activity-out`, `watch --video`, `watch --poses`) or a
-live `--activity-ws` / `serve --ws` stream, and it draws its brain on an *atlas*:
+live `--activity-ws` / `serve --ws` stream, and it draws its brain on an *atlas*. The
+brain atlas (124,658 somata of the brain, 4.5 MB) is committed under `assets/brain-atlas`,
+so the page works from any static host with nothing to build, and a model's output can be
+dropped onto its brain panel ("load model JSON", or drag the file in): the page validates
+it the way `replay-validate` does and shows every reason a file is refused. "synthetic
+example" makes a replay in the page to show the pipeline.
 
 ```powershell
-neurofly export-atlas --out assets/brain-atlas          # soma positions, ids, regions, hashes
+python -m http.server 8000                              # examples/workbench.html, then drop a file on the brain
 neurofly-core replay-export activity.json --out model-output.json
 neurofly-core replay-validate model-output.json --atlas assets/brain-atlas
-python -m http.server 8000   # examples/workbench.html?atlas=../assets/brain-atlas&activity=../model-output.json&video=../videos/live.mp4
+neurofly export-atlas --out assets/brain-atlas --check  # the committed atlas matches its hashes (CI does this)
+neurofly export-atlas --out my-atlas --subset full      # another atlas (the VNC too), then ?atlas=../my-atlas
 ```
+
+`?atlas=none` draws an activity file on its own positions instead of the committed atlas.
 
 The atlas is the anatomy as plain files with a manifest (`positions.bin`, `ids.bin`,
 `groups.bin`, `superclass.json`, SHA-256 of each, the CC BY 4.0 credit), and the *replay

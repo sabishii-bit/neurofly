@@ -71,7 +71,7 @@ def export_atlas(cx: Connectome, out: str, known_only: bool = True) -> dict:
     positions.tofile(os.path.join(out, "positions.bin"))
     ids.tofile(os.path.join(out, "ids.bin"))
     groups.tofile(os.path.join(out, "groups.bin"))
-    with open(os.path.join(out, "superclass.json"), "w") as f:
+    with open(os.path.join(out, "superclass.json"), "w", newline="\n") as f:
         json.dump(superclass, f)
     files = ["positions.bin", "ids.bin", "groups.bin", "superclass.json"]
     manifest = {
@@ -92,9 +92,9 @@ def export_atlas(cx: Connectome, out: str, known_only: bool = True) -> dict:
         "sha256": {name: sha256(os.path.join(out, name)) for name in files},
         "licence": DATA_LICENCE,
     }
-    with open(os.path.join(out, "manifest.json"), "w") as f:
+    with open(os.path.join(out, "manifest.json"), "w", newline="\n") as f:
         json.dump(manifest, f, indent=2)
-    with open(os.path.join(out, "NOTICE.md"), "w") as f:
+    with open(os.path.join(out, "NOTICE.md"), "w", newline="\n") as f:
         f.write("# Brain atlas notice\n\n"
                 "Soma positions, ids and superclasses of the neurons of the MaleCNS v1.0\n"
                 "connectome (FlyEM Project Team at HHMI Janelia Research Campus, with the MRC\n"

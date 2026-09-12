@@ -34,7 +34,9 @@ bindings/rust/Cargo.lock
 bindings/node/node_modules/
 bindings/node/dist/
 bindings/node/package-lock.json
-/assets/
+/assets/*
+# the committed anatomy (CC BY 4.0, 4.5 MB) that the workbench loads by default
+!/assets/brain-atlas/
 /.coverage
 /htmlcov/
 /*.pt

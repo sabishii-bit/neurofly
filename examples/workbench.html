@@ -5,8 +5,9 @@
   reset, scrub, speed and loop apply to all three.
 
   Sources, all optional, all URL parameters:
-    atlas=../assets/brain-atlas       the anatomy (neurofly export-atlas); without it the
-                                      activity file's own positions are used
+    atlas=../assets/brain-atlas       the anatomy (the committed atlas is the default; an
+                                      activity file's own positions are used instead when it
+                                      has them and no atlas is given; atlas=none for that)
     activity=../activity.json         neurofly's --activity-out file, or a replay-format file
                                       (neurofly-core replay-export / any model's output)
     ws=ws://127.0.0.1:8767            live activity instead (--activity-ws, or a served brain
@@ -37,12 +38,20 @@
     #bar button, #bar select { font: inherit; }
     #credit { font-size: 11px; color: var(--dim); white-space: nowrap; }
     canvas { display: block; }
+    #load { position: absolute; right: 10px; top: 4px; z-index: 3; display: flex; gap: 6px; align-items: center; }
+    #load button { font: inherit; font-size: 11px; background: #1c2230; color: var(--ink); border: 1px solid #2c3446; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+    #load button:hover { background: #26304a; }
+    #problems { position: absolute; left: 10px; right: 10px; top: 28px; z-index: 3; display: none; background: #2a1418; color: #f7b0b0; border: 1px solid #5a2a30; border-radius: 4px; padding: 6px 8px; font-size: 11px; white-space: pre-wrap; max-height: 40%; overflow: auto; }
+    #brain.drop { outline: 2px dashed #4fa3ff; outline-offset: -4px; }
   </style>
 </head>
 <body>
   <div id="grid">
     <div class="panel" id="env"><h2>01 / WHAT THE FLY SAW</h2><video id="video" muted playsinline></video><div class="note" id="envnote">no video: add ?video=</div></div>
-    <div class="panel" id="brain"><h2>02 / BRAIN</h2><div class="note" id="brainnote">loading</div></div>
+    <div class="panel" id="brain"><h2>02 / BRAIN</h2>
+      <div id="load"><button id="loadfile" title="a replay-format JSON (any model's output, by bodyId) or neurofly's --activity-out file">load model JSON</button><button id="loadsynthetic" title="a synthetic replay made here, to see the pipeline">synthetic example</button><input id="file" type="file" accept=".json,application/json" hidden /></div>
+      <div id="problems"></div>
+      <div class="note" id="brainnote">loading</div></div>
     <div class="panel" id="body"><h2>03 / BODY</h2><div class="note" id="bodynote">no body: add ?glb= and ?poses=</div></div>
   </div>
   <div id="bar">
@@ -64,6 +73,8 @@
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
     const q = new URLSearchParams(location.search);
+    const scrub = document.getElementById("scrub"), clock = document.getElementById("clock"), playBtn = document.getElementById("play");
+    let t = 0, playing = false, last = performance.now();
     const GROUP_COLOURS = ["#4fa3ff", "#ffc857", "#ff5da2", "#7ee787", "#9aa0a6"];
     const SUPER = { ol_intrinsic: 0x4fa3ff, ol_sensory: 0x2f6fbf, visual_projection: 0x6fd3ff, visual_centrifugal: 0x3fb0c0,
       cb_intrinsic: 0xffc857, cb_sensory: 0xff9f43, cb_motor: 0xff6b6b, descending_neuron: 0xff5da2, ascending_neuron: 0xc77dff,
@@ -118,26 +129,105 @@
 
     // --- sources -----------------------------------------------------------------------------------
     let activity = null, replay = null, fps = parseFloat(q.get("fps") ?? "10"), duration = 30, lastStep = -1;
-    const atlasUrl = q.get("atlas"), activityUrl = q.get("activity"), wsUrl = q.get("ws");
+    const atlasParam = q.get("atlas"), activityUrl = q.get("activity"), wsUrl = q.get("ws");
+    const atlasUrl = atlasParam === "none" ? null : (atlasParam ?? "../assets/brain-atlas");   // the committed atlas by default
     const brainnote = document.getElementById("brainnote");
+    let atlasNote = "";
     if (atlasUrl) {
-      const m = await (await fetch(`${atlasUrl}/manifest.json`)).json();
-      const [pos, ids, groups] = await Promise.all([fetchBin(`${atlasUrl}/positions.bin`, Float32Array), fetchBin(`${atlasUrl}/ids.bin`, BigInt64Array), fetchBin(`${atlasUrl}/groups.bin`, Uint8Array)]);
-      const superclass = await (await fetch(`${atlasUrl}/${m.superclass}`)).json();
-      buildBrain(pos, ids, superclass, groups);
-      brainnote.textContent = `${m.n.toLocaleString()} neurons, ${m.dataset}`;
+      try {
+        const m = await (await fetch(`${atlasUrl}/manifest.json`)).json();
+        const [pos, ids, groups] = await Promise.all([fetchBin(`${atlasUrl}/positions.bin`, Float32Array), fetchBin(`${atlasUrl}/ids.bin`, BigInt64Array), fetchBin(`${atlasUrl}/groups.bin`, Uint8Array)]);
+        const superclass = await (await fetch(`${atlasUrl}/${m.superclass}`)).json();
+        buildBrain(pos, ids, superclass, groups);
+        atlasNote = `${m.n.toLocaleString()} neurons, ${m.dataset}`; brainnote.textContent = atlasNote;
+      } catch (e) { if (atlasParam) brainnote.textContent = `could not load the atlas at ${atlasUrl}: ${e.message}`; }
     }
-    if (activityUrl) {
-      const file = await (await fetch(activityUrl)).json();
-      if (file.frames) {                                    // the replay format, by bodyId
-        replay = file; duration = file.frames[file.frames.length - 1].time || duration;
-        if (!points) brainnote.textContent = "a replay needs ?atlas= for the positions";
-        else brainnote.textContent += ` | replay: ${file.source?.kind ?? "?"} ${file.source?.name ?? ""}, ${file.frames.length} frames`;
-      } else {                                              // neurofly's activity file, by index
-        activity = file; fps = file.fps || fps; duration = file.steps.length / fps;
-        if (!points) { buildBrain(new Float32Array(file.positions.flat()), file.ids, file.superclass, null); brainnote.textContent = `${file.n.toLocaleString()} neurons`; }
-        brainnote.textContent += ` | ${file.steps.length} steps at ${fps} fps`;
+
+    // --- model files: the replay format (any model, by bodyId) or neurofly's activity file --------
+    // The checks are the ones neurofly-core replay-validate makes; the page validates structure,
+    // not science. A file that fails is rejected with the reasons shown.
+    const REPLAY = { version: 1, maxBytes: 50 * 1024 * 1024, maxFrames: 10000, kinds: ["synthetic", "predicted", "measured"] };
+    function validateReplay(r, nBytes) {
+      const problems = [];
+      if (nBytes > REPLAY.maxBytes) problems.push(`file is ${(nBytes / 1e6).toFixed(1)} MB; the limit is ${REPLAY.maxBytes / 1e6} MB`);
+      if (r.version !== REPLAY.version) problems.push(`version must be ${REPLAY.version}, got ${JSON.stringify(r.version)}`);
+      if (r.dataset && idIndex && r.dataset !== "male-cns:v1.0") problems.push(`dataset ${r.dataset} is not the atlas's male-cns:v1.0`);
+      if (!REPLAY.kinds.includes(r.source?.kind)) problems.push("source.kind must be synthetic, predicted or measured");
+      const frames = r.frames;
+      if (!Array.isArray(frames) || frames.length < 2 || frames.length > REPLAY.maxFrames) { problems.push(`frames must be a list of 2 to ${REPLAY.maxFrames} entries`); return problems; }
+      let last = null;
+      for (let k = 0; k < frames.length && problems.length <= 20; k++) {
+        const fr = frames[k], t = fr.time;
+        if (typeof t !== "number") { problems.push(`frame ${k}: time missing`); continue; }
+        if (k === 0 && t !== 0) problems.push("the first frame must be at time 0");
+        if (last !== null && t <= last) problems.push(`frame ${k}: time ${t} does not increase`);
+        last = t;
+        const seen = new Set();
+        for (const pair of fr.values ?? []) {
+          if (!Array.isArray(pair) || pair.length !== 2) { problems.push(`frame ${k}: a value is not [id, value]`); break; }
+          const [id, v] = pair;
+          if (typeof v !== "number" || v < 0 || v > 1) { problems.push(`frame ${k}: value ${JSON.stringify(v)} for id ${id} is outside [0, 1]`); break; }
+          if (seen.has(id)) { problems.push(`frame ${k}: id ${id} repeated`); break; }
+          seen.add(id);
+          if (idIndex && !idIndex.has(Number(id))) { problems.push(`frame ${k}: id ${id} is not in the atlas`); break; }
+        }
       }
+      if (problems.length > 20) problems.push("...");
+      return problems;
+    }
+    const problemsBox = document.getElementById("problems");
+    function showProblems(list) { problemsBox.style.display = list.length ? "block" : "none"; problemsBox.textContent = list.join("\n"); }
+    function useModel(file, label, nBytes) {
+      showProblems([]);
+      if (glow) glow.fill(0); lastStep = -1; activity = replay = null;
+      if (file.frames) {                                    // the replay format, by bodyId
+        const problems = validateReplay(file, nBytes ?? 0);
+        if (problems.length) { showProblems([`${label}: rejected`, ...problems]); return false; }
+        if (!points) { showProblems([`${label}: a replay needs the atlas for the positions (?atlas=)`]); return false; }
+        replay = file; duration = file.frames[file.frames.length - 1].time || duration;
+        brainnote.textContent = `${atlasNote} | ${file.source.kind}: ${file.source.name ?? label}, ${file.frames.length} frames`;
+      } else if (file.steps) {                              // neurofly's activity file, by index
+        if (!points && file.positions) { buildBrain(new Float32Array(file.positions.flat()), file.ids, file.superclass, null); atlasNote = `${file.n.toLocaleString()} neurons`; }
+        else if (points && file.n !== n) { showProblems([`${label}: an activity file for ${file.n} neurons cannot be drawn on this atlas of ${n}; open it with ?atlas=none`]); return false; }
+        activity = file; fps = file.fps || fps; duration = file.steps.length / fps;
+        brainnote.textContent = `${atlasNote} | ${label}: ${file.steps.length} steps at ${fps} fps`;
+      } else { showProblems([`${label}: neither a replay (frames) nor an activity file (steps)`]); return false; }
+      scrub.max = duration; seek(0);
+      return true;
+    }
+    function syntheticReplay(seconds = 6, hz = 10) {           // a made-up model output, to see the pipeline
+      const ids = idIndex ? Array.from(idIndex.keys()) : [];
+      const pick = []; for (let i = 0; i < ids.length; i += Math.max(1, Math.floor(ids.length / 3000))) pick.push(ids[i]);
+      const phase = pick.map(() => Math.random() * Math.PI * 2), speed = pick.map(() => 0.5 + Math.random() * 2);
+      const frames = [];
+      for (let k = 0; k < seconds * hz; k++) {
+        const t = k / hz, values = [];
+        for (let i = 0; i < pick.length; i++) { const v = Math.max(0, Math.sin(t * speed[i] + phase[i])); if (v > 0.6) values.push([pick[i], +((v - 0.6) / 0.4).toFixed(3)]); }
+        frames.push({ time: t, values });
+      }
+      return { version: 1, dataset: "male-cns:v1.0", source: { kind: "synthetic", name: "synthetic example (made in the page)", normalization: "sinusoids, clamped to [0, 1]" }, frames };
+    }
+    const fileInput = document.getElementById("file");
+    document.getElementById("loadfile").onclick = () => fileInput.click();
+    document.getElementById("loadsynthetic").onclick = () => useModel(syntheticReplay(), "synthetic example");
+    async function loadLocal(f) {
+      let parsed;
+      try { parsed = JSON.parse(await f.text()); } catch (e) { showProblems([`${f.name}: not JSON (${e.message})`]); return; }
+      useModel(parsed, f.name, f.size);
+    }
+    fileInput.onchange = () => { if (fileInput.files[0]) loadLocal(fileInput.files[0]); fileInput.value = ""; };
+    const brainPanel = document.getElementById("brain");
+    brainPanel.addEventListener("dragover", (e) => { e.preventDefault(); brainPanel.classList.add("drop"); });
+    brainPanel.addEventListener("dragleave", () => brainPanel.classList.remove("drop"));
+    brainPanel.addEventListener("drop", (e) => { e.preventDefault(); brainPanel.classList.remove("drop"); const f = e.dataTransfer.files[0]; if (f) loadLocal(f); });
+    window.__wb = { validateReplay, useModel, syntheticReplay, get replay() { return replay; }, get activity() { return activity; }, get n() { return n; } };
+
+    if (activityUrl) {
+      const res = await fetch(activityUrl);
+      const text = await res.text();
+      let file = null;
+      try { file = JSON.parse(text); } catch (e) { showProblems([`${activityUrl}: not JSON (${e.message})`]); }
+      if (file) useModel(file, activityUrl.split("/").pop(), text.length);
     }
     if (wsUrl) {
       const ws = new WebSocket(wsUrl);
@@ -186,9 +276,7 @@
     }
 
     // --- the clock ----------------------------------------------------------------------------------
-    const scrub = document.getElementById("scrub"), clock = document.getElementById("clock"), playBtn = document.getElementById("play");
     scrub.max = duration;
-    let t = 0, playing = false, last = performance.now();
     function seek(time) {
       t = Math.max(0, Math.min(duration, time));
       scrub.value = t; clock.textContent = `${t.toFixed(2)} s`;
@@ -215,7 +303,7 @@
       if (window.__body) { window.__body.controls.update(); window.__body.renderer.render(window.__body.scene, window.__body.camera); }
       requestAnimationFrame(frame);
     }
-    if (!points && !wsUrl) brainnote.textContent = "no brain: add ?atlas= or ?activity=";
+    if (!points && !wsUrl) brainnote.textContent = "no brain: the atlas did not load (neurofly export-atlas --out assets/brain-atlas), or add ?activity=";
     requestAnimationFrame(frame);
   </script>
 </body>

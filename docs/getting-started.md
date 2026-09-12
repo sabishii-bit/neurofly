@@ -84,6 +84,8 @@ static server and opens the page:
 python scripts/demo.py body        # the fly walking an open-loop tripod gait, in Three.js
 python scripts/demo.py brain       # the brain atlas lit by a run's activity
 python scripts/demo.py workbench   # what the fly saw, the brain and the body on one timeline
+                                   # (the brain atlas is committed: open examples/workbench.html
+                                   # from any static server and drop a model's replay file on it)
 python scripts/demo.py web-fps     # a Three.js game training a served brain in the page
 ```
 

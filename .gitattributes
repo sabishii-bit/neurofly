@@ -4,3 +4,7 @@
 *.pkl binary
 *.feather binary
 *.zip binary
+
+# the committed atlas: hashed files must survive checkout byte for byte
+assets/brain-atlas/*.bin binary
+assets/brain-atlas/superclass.json -text
