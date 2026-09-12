@@ -48,11 +48,15 @@ class PCEnv(gym.Env):
     def __init__(self, model: Model, *, video: VideoSource, controls: Controls | None = None,
                  audio: AudioSource | None = None, task: Task | None = None, fps: float = 10.0,
                  realtime: bool | None = None, max_steps: int | None = None, detector=None,
-                 odours=None):
+                 odours=None, senses=None):
         self.model = model
         self.video, self.audio = video, audio
         self.detector = detector
-        self.odours = odours      # (frame, chunk, info, detections) -> odours, or None
+        # each: (frame, chunk, info, detections) -> channel values, or None
+        self.senses = dict(senses or {})
+        if odours is not None:
+            self.senses["odours"] = odours
+        self.odours = self.senses.get("odours")
         self.controls = controls if controls is not None else NullControls()
         self.task = task if task is not None else NoTask()
         self.fps = float(fps)
@@ -117,15 +121,17 @@ class PCEnv(gym.Env):
         dets = self._detect()
         info = {"t": 0}
         return self.model.observe(self._frame, self._chunk, detections=dets,
-                                  odours=self._smell(info, dets)), {}
+                                  **self._smell(info, dets)), {}
 
-    def _smell(self, info, dets):
-        if self.odours is None:
-            return None
-        o = self.odours(self._frame, self._chunk, info, dets)
-        if o is not None:
-            info["odours"] = o
-        return o
+    def _smell(self, info, dets) -> dict:
+        """The channel senses for this step, as observe keywords."""
+        out = {}
+        for kw, fn in self.senses.items():
+            v = fn(self._frame, self._chunk, info, dets)
+            if v is not None:
+                info[kw] = v
+                out[kw] = v
+        return out
 
     def _detect(self):
         self._dets = self.detector.detect(self._frame) if self.detector is not None else None
@@ -145,7 +151,7 @@ class PCEnv(gym.Env):
         terminated = bool(self.task.done(self._frame, self._chunk, info))
         truncated = (not more) or (self.max_steps is not None and self.t >= self.max_steps)
         obs = self.model.observe(self._frame, self._chunk, reward=reward, detections=self._dets,
-                                 odours=self._smell(info, self._dets))
+                                 **self._smell(info, self._dets))
         info["brain_spikes"] = self.model.last_spikes
         if terminated or truncated:
             self.controls.release_all()

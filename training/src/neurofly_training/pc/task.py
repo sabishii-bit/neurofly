@@ -9,6 +9,7 @@ scripts at it with ``--reward mypackage.module:MyTask`` (or
     reward(frame, audio, state, info) -> float
     done(frame, audio, info) -> bool
     odours(frame, audio, info) -> {"channel": value} | vector | None   (for --odours)
+    tastes(frame, audio, info), thermo(frame, audio, info)               (--tastes, --thermo)
 
 ``PatchBrightness`` is a worked example that reads a rectangle of the screen
 (a health bar, a score, a target) and rewards its brightness.
@@ -39,6 +40,14 @@ class Task:
         """What the fly should smell this step, for a model built with ``--odours``: a
         dict of channel name to value in [0, 1] (missing channels keep their last value),
         a vector in channel order, or None to change nothing."""
+        return None
+
+    def tastes(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
+        """Taste channel values for a model built with ``--tastes``, as ``odours``."""
+        return None
+
+    def thermo(self, frame: np.ndarray, audio: np.ndarray | None, info: dict):
+        """Temperature and humidity channel values for ``--thermo``, as ``odours``."""
         return None
 
 

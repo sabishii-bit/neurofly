@@ -88,6 +88,10 @@ pub struct Step {
     detections: Option<Vec<Detection>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     odours: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tastes: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thermo: Option<Vec<f32>>,
 }
 
 /// One detected object for an artifact with a detection encoder: a class id (index into
@@ -106,7 +110,7 @@ impl Step {
     pub fn rgb(frame: &[u8], width: u32, height: u32) -> Step {
         Step { op: "step", frame: B64.encode(frame), width, height, format: None, audio: None,
                sample_rate: None, channels: None, reward: None, observe_only: None,
-               detections: None, odours: None }
+               detections: None, odours: None, tastes: None, thermo: None }
     }
 
     /// An encoded image (`"png"` or `"jpeg"`).
@@ -142,6 +146,18 @@ impl Step {
     /// Odour channel values in [0, 1], in the artifact's `odour_channels` order.
     pub fn odours(mut self, values: Vec<f32>) -> Step {
         self.odours = Some(values);
+        self
+    }
+
+    /// Taste channel values in [0, 1] (`taste_channels` order).
+    pub fn tastes(mut self, values: Vec<f32>) -> Step {
+        self.tastes = Some(values);
+        self
+    }
+
+    /// Temperature and humidity channel values in [0, 1] (`thermo_channels` order).
+    pub fn thermo(mut self, values: Vec<f32>) -> Step {
+        self.thermo = Some(values);
         self
     }
 

@@ -150,4 +150,10 @@ neurons in the same order.
 * **Odours.** `--odours health,danger` (from your Task) or `--odours detections` drives
   olfactory receptor neurons, one glomerulus per channel. With `--plasticity` this is the
   input the mushroom body learns about; `--include-odours` also gives the channels to the
-  policy.
+  policy. `--tastes` and `--thermo` are two more senses of the same shape.
+* **Reward where the fly has it.** `--dopamine-reward` drives the PAM dopamine neurons
+  while reward is positive, as `--dopamine-punish` drives PPL1 while it is negative, and
+  `--plasticity-target mbon` puts `--plasticity` on the Kenyon-cell-to-MBON synapses, the
+  fly's own memory. The default keeps learning on the synapses onto the readout.
+* **Readouts to try.** `compass` (the heading circuit) and `mbon` (the mushroom body
+  output) can be added to any readout, `descending+mbon`.

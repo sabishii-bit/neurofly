@@ -115,18 +115,18 @@ def build_detection(pops: Populations, n_neurons: int, classes, *, grid=(6, 8),
                             gain=gain, device=device)
 
 
-def build_olfaction(pops: Populations, n_neurons: int, channels, *, gain: float = 15.0,
-                    adapt: float = 0.0, device: str = "cpu") -> OlfactionEncoder:
-    """Each odour channel onto the receptor neurons of one glomerulus, in the antennal
-    lobe's own order (channel i -> the i-th glomerulus by name; more channels than
-    glomeruli wrap around and share)."""
-    if not pops.glomeruli:
-        raise ValueError("no olfactory receptor neurons in this connectome subset "
+def build_sense(groups: dict, n_neurons: int, channels, *, gain: float = 15.0,
+                adapt: float = 0.0, device: str = "cpu", what: str = "sense") -> OlfactionEncoder:
+    """Each named channel onto one group of receptor neurons (a glomerulus, a taste
+    neuron type, a thermo/hygro type), in name order; more channels than groups wrap
+    around and share."""
+    if not groups:
+        raise ValueError(f"no {what} receptor neurons in this connectome subset "
                          "(needs the head: subsets central, visual or brain)")
-    names = list(pops.glomeruli)
+    names = list(groups)
     r_, c_ = [], []
     for j, _ in enumerate(channels):
-        for nrn in pops.glomeruli[names[j % len(names)]]:
+        for nrn in groups[names[j % len(names)]]:
             r_.append(int(nrn))
             c_.append(j)
     M = sp.csr_matrix((np.ones(len(r_), np.float32), (r_, c_)),
@@ -138,6 +138,21 @@ def build_olfaction(pops: Populations, n_neurons: int, channels, *, gain: float 
                             gain=gain, adapt=adapt, device=device)
 
 
+def build_olfaction(pops: Populations, n_neurons: int, channels, **kw) -> OlfactionEncoder:
+    """Odour channels onto the glomeruli of the antennal lobe."""
+    return build_sense(pops.glomeruli, n_neurons, channels, what="olfactory", **kw)
+
+
+def build_gustation(pops: Populations, n_neurons: int, channels, **kw) -> OlfactionEncoder:
+    """Taste channels onto the gustatory receptor neuron types (legs and proboscis)."""
+    return build_sense(pops.taste_types, n_neurons, channels, what="gustatory", **kw)
+
+
+def build_thermo(pops: Populations, n_neurons: int, channels, **kw) -> OlfactionEncoder:
+    """Temperature and humidity channels onto the thermo- and hygrosensory types."""
+    return build_sense(pops.thermo_types, n_neurons, channels, what="thermo/hygro", **kw)
+
+
 def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", dt: float = 0.5,
                 brain_ms: float = 10.0, brain_gain: float = 1.0, warmup_ms: float = 20.0,
                 retina_mode: str = "auto", retina_gain: float = 15.0,
@@ -147,8 +162,11 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
                 detect_classes=None, detection_grid=(6, 8), detection_gain: float = 15.0,
                 include_detections: bool = False, odour_channels=None,
                 odour_gain: float = 15.0, odour_adapt: float = 0.0,
-                include_odours: bool = False,
-                plasticity: bool = False, dopamine_punish: float = 0.0, policy=None,
+                include_odours: bool = False, taste_channels=None, taste_gain: float = 15.0,
+                include_tastes: bool = False, thermo_channels=None, thermo_gain: float = 15.0,
+                include_thermo: bool = False, plasticity_target: str = "readout",
+                plasticity: bool = False, dopamine_punish: float = 0.0,
+                dopamine_reward: float = 0.0, policy=None,
                 name: str | None = None, meta: dict | None = None, device: str = "cpu",
                 backend: str = "auto") -> Model:
     """Assemble a ``Model`` from a connectome subset and the interface options."""
@@ -164,24 +182,32 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
     if detect_classes:
         detection = build_detection(pops, cx.n, list(detect_classes), grid=detection_grid,
                                     gain=detection_gain, device=device)
-    olfaction = None
+    olfaction = gustation = thermo = None
     if odour_channels:
         olfaction = build_olfaction(pops, cx.n, list(odour_channels), gain=odour_gain,
                                     adapt=odour_adapt, device=device)
+    if taste_channels:
+        gustation = build_gustation(pops, cx.n, list(taste_channels), gain=taste_gain,
+                                    device=device)
+    if thermo_channels:
+        thermo = build_thermo(pops, cx.n, list(thermo_channels), gain=thermo_gain, device=device)
     readout_idx = pops.readout(readout) if isinstance(readout, str) else np.asarray(readout)
     punish = pops.ppl1 if len(pops.ppl1) else pops.dopamine
     config = ModelConfig(dt=dt, brain_ms=brain_ms, warmup_ms=warmup_ms,
                          include_frame=include_frame, frame_grid=tuple(frame_grid),
                          include_audio=include_audio, include_detections=include_detections,
-                         include_odours=include_odours, plasticity=plasticity,
-                         dopamine_punish=dopamine_punish, name=name or cx.name,
+                         include_odours=include_odours, include_tastes=include_tastes,
+                         include_thermo=include_thermo, plasticity=plasticity,
+                         plasticity_target=plasticity_target,
+                         dopamine_punish=dopamine_punish, dopamine_reward=dopamine_reward,
+                         name=name or cx.name,
                          meta=dict(meta or {}, connectome=cx.name, n_neurons=cx.n,
                                    readout=readout if isinstance(readout, str) else "custom"))
     positions, known = cx.positions()
     return Model(brain, readout_idx=readout_idx, layout=layout, retina=retina,
-                 audition=audition, detection=detection, olfaction=olfaction, policy=policy,
-                 config=config,
-                 punish_idx=punish,
+                 audition=audition, detection=detection, olfaction=olfaction,
+                 gustation=gustation, thermo=thermo, policy=policy, config=config,
+                 punish_idx=punish, reward_idx=pops.pam,
                  neuron_ids=cx.neurons["bodyId"].values,
                  neuron_types=cx.neurons["type"].values,
                  neuron_superclass=cx.neurons["superclass"].values,

@@ -35,10 +35,14 @@ protocol that covers both using the brain and training it.
   YOLO11, RT-DETRv2, D-FINE, SSDLite, ONNX): `neurofly detect-list` shows them with their
   licences, `detect-install` fetches one, and `detect-label` plus `detect-train` distil the
   open-vocabulary detector into a fast fine-tuned one without hand labelling.
-* **Smell**: `--odours health,danger` drives olfactory receptor neurons, one glomerulus
-  per channel, from your Task or from the detector's classes, so the mushroom body has
-  something to attach punishment to; the body's touch (leg contacts, wind, gravity) was
-  already wired by annotation.
+* **Smell, taste, temperature**: `--odours`, `--tastes` and `--thermo` drive the
+  olfactory, gustatory and thermo/hygrosensory receptor neurons from your Task or from the
+  detector's classes; the body's touch (leg contacts, wind, gravity) was already wired by
+  annotation.
+* **Learning where the fly learns**: `--dopamine-punish` and `--dopamine-reward` drive
+  the PPL1 and PAM dopamine neurons, and `--plasticity-target mbon` puts the three-factor
+  rule on the Kenyon-cell-to-MBON synapses, so punishment during a smell weakens it and
+  reward strengthens it. The compass and the mushroom body output are readouts.
 * **Learning from footage**: an inverse dynamics model labels video that has no input log;
   corrections while the fly plays become new labels (DAgger); template matching and OCR
   helpers turn what is on screen into reward.

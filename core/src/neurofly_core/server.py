@@ -123,7 +123,10 @@ class Session:
                         "detection_classes": (list(m.detection.classes) if m.detection
                                               else None),
                         "odour_channels": (list(m.olfaction.channels) if m.olfaction
-                                           else None)})
+                                           else None),
+                        "taste_channels": (list(m.gustation.channels) if m.gustation
+                                           else None),
+                        "thermo_channels": (list(m.thermo.channels) if m.thermo else None)})
         else:
             out.update({"has_audition": False, "sample_rate": None, "retina_grid": [],
                         "n_obs": m.n_obs,
@@ -153,15 +156,15 @@ class Session:
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
                     reward: float = 0.0, observe_only: bool = False, detections=None,
-                    odours=None) -> dict:
+                    odours=None, tastes=None, thermo=None) -> dict:
         m = self.model
         if m.kind != "pc":
             raise ValueError("step / observe need a PC artifact; use body_step for a body one")
         if observe_only or m.policy is None:
-            feats = m.observe(frame, audio, reward, detections, odours)
+            feats = m.observe(frame, audio, reward, detections, odours, tastes, thermo)
             out = {"ok": True, "t": m.t, "features": feats.tolist(), "spikes": m.last_spikes}
         else:
-            state, info = m.step(frame, audio, reward, detections, odours)
+            state, info = m.step(frame, audio, reward, detections, odours, tastes, thermo)
             out = {"ok": True, "t": info["t"], "spikes": info["spikes"],
                    "action": info["action"], "held": info["held"]}
             out.update(state.to_dict())
@@ -224,7 +227,8 @@ class Session:
                 return self.step_arrays(decode_frame(req), decode_audio(req),
                                         float(req.get("reward", 0.0)), observe_only=observe,
                                         detections=decode_detections(req),
-                                        odours=decode_odours(req))
+                                        odours=decode_odours(req), tastes=req.get("tastes"),
+                                        thermo=req.get("thermo"))
             if op == "set_policy":
                 m.policy = self.policy_from(req)
                 return {"ok": True, "type": m.policy.kind}

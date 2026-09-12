@@ -45,6 +45,8 @@ PC_ARGS = ["fps", "window", "region", "monitor", "audio", "keys", "buttons", "mo
            "retina_gain", "retina_temporal", "audio_gain", "include_frame", "include_audio",
            "detect", "detection_grid", "detection_gain", "include_detections",
            "odours", "odour_gain", "odour_adapt", "include_odours",
+           "tastes", "taste_gain", "include_tastes", "thermo", "thermo_gain", "include_thermo",
+           "dopamine_reward", "plasticity_target",
            "dopamine_punish"]
 ENV_ARGS = BODY_ARGS + PC_ARGS
 
@@ -141,6 +143,23 @@ def odour_source(model, task=None):
     return lambda frame, chunk, info, detections: task.odours(frame, chunk, info)
 
 
+def sense_sources(model, task=None) -> dict:
+    """``{"odours": fn, "tastes": fn, "thermo": fn}`` for the channel senses the model has
+    and a source exists for; each ``fn(frame, chunk, info, detections)`` returns the
+    values (or None to keep the last)."""
+    out = {}
+    if model.olfaction is not None:
+        fn = odour_source(model, task)
+        if fn is not None:
+            out["odours"] = fn
+    if task is not None:
+        if model.gustation is not None:
+            out["tastes"] = lambda frame, chunk, info, dets: task.tastes(frame, chunk, info)
+        if model.thermo is not None:
+            out["thermo"] = lambda frame, chunk, info, dets: task.thermo(frame, chunk, info)
+    return out
+
+
 def parse_grid(grid, default=(6, 8)) -> tuple[int, int]:
     if grid is None or grid == "":
         return tuple(default)
@@ -165,7 +184,10 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                   include_audio: bool = False, dopamine_punish: float = 0.0,
                   detect=None, detection_grid=(6, 8), detection_gain: float = 15.0,
                   include_detections: bool = False, odours=None, odour_gain: float = 15.0,
-                  odour_adapt: float = 0.0, include_odours: bool = False,
+                  odour_adapt: float = 0.0, include_odours: bool = False, tastes=None,
+                  taste_gain: float = 15.0, include_tastes: bool = False, thermo=None,
+                  thermo_gain: float = 15.0, include_thermo: bool = False,
+                  dopamine_reward: float = 0.0, plasticity_target: str = "readout",
                   sample_rate: int = 16000, name: str | None = None, policy=None,
                   **_ignored):
     """The ``neurofly_core.Model`` a PC task uses, without any sources. This is what
@@ -178,6 +200,15 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
     cx = load_connectome(brain, subset=subset or default_subset(task), data_dir=data_dir,
                          synthetic_n=synthetic_n)
     from neurofly_training.pc.detect import classes_for
+    # a run's config.json from before an option existed reads back as None: use the default
+    detection_gain = 15.0 if detection_gain is None else detection_gain
+    odour_gain = 15.0 if odour_gain is None else odour_gain
+    odour_adapt = 0.0 if odour_adapt is None else odour_adapt
+    taste_gain = 15.0 if taste_gain is None else taste_gain
+    thermo_gain = 15.0 if thermo_gain is None else thermo_gain
+    dopamine_reward = 0.0 if dopamine_reward is None else dopamine_reward
+    dopamine_punish = 0.0 if dopamine_punish is None else dopamine_punish
+    plasticity_target = plasticity_target or "readout"
     classes = list(detect) if isinstance(detect, (list, tuple)) else classes_for(detect)
     channels = odour_channels(odours, classes)
     return build_model(cx, layout, readout=readout or default_readout(task), dt=dt,
@@ -189,8 +220,12 @@ def make_pc_model(task: str = "pc", brain: str = "malecns", subset: str | None =
                        detect_classes=classes, detection_grid=parse_grid(detection_grid),
                        detection_gain=detection_gain, include_detections=include_detections,
                        odour_channels=channels, odour_gain=odour_gain, odour_adapt=odour_adapt,
-                       include_odours=include_odours,
-                       dopamine_punish=dopamine_punish, policy=policy, name=name,
+                       include_odours=include_odours, taste_channels=parse_names(tastes),
+                       taste_gain=taste_gain, include_tastes=include_tastes,
+                       thermo_channels=parse_names(thermo), thermo_gain=thermo_gain,
+                       include_thermo=include_thermo, plasticity_target=plasticity_target,
+                       dopamine_punish=dopamine_punish, dopamine_reward=dopamine_reward,
+                       policy=policy, name=name,
                        meta={"brain": brain, "subset": subset or default_subset(task),
                              "detect": detect if isinstance(detect, str) else None,
                              "odours": "detections" if str(odours).lower() == "detections"
@@ -252,7 +287,7 @@ def make_pc_env(task: str = "pc", seed: int = 0, fps: float = 10.0, window: str 
     task_obj = task_obj if task_obj is not None else load_task(reward)
     return PCEnv(model, video=video_source, audio=audio_source, controls=controls, task=task_obj,
                  fps=fps, max_steps=max_steps, detector=detector,
-                 odours=odour_source(model, task_obj))
+                 senses=sense_sources(model, task_obj))
 
 
 def make_env(task: str = "forward", seed: int = 0, brain: str = "none", subset: str | None = None,
@@ -368,4 +403,18 @@ def add_env_args(p, *, brain_default: str = "none",
                    help="0 to 1: how much the drive fades while a channel stays constant")
     g.add_argument("--include-odours", action="store_true",
                    help="also give the policy the odour channels")
+    g.add_argument("--tastes", default=None, metavar="CHANNELS",
+                   help="taste channels onto gustatory neurons, filled by your Task's tastes()")
+    g.add_argument("--taste-gain", type=float, default=15.0)
+    g.add_argument("--include-tastes", action="store_true")
+    g.add_argument("--thermo", default=None, metavar="CHANNELS",
+                   help="temperature/humidity channels onto thermo- and hygrosensory neurons, "
+                        "filled by your Task's thermo()")
+    g.add_argument("--thermo-gain", type=float, default=15.0)
+    g.add_argument("--include-thermo", action="store_true")
+    g.add_argument("--dopamine-reward", type=float, default=0.0,
+                   help="mV of drive on the PAM dopamine neurons while reward is positive")
+    g.add_argument("--plasticity-target", default="readout", choices=["readout", "mbon"],
+                   help="where --plasticity acts: synapses onto the readout, or the Kenyon "
+                        "cell to mushroom-body output synapses (needs type annotations)")
     return p

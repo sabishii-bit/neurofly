@@ -21,7 +21,13 @@ import torch
 from neurofly_core.encode.vision import _csr_to_torch
 
 
-class OlfactionEncoder:
+class ChannelEncoder:
+    """Named scalar channels in [0, 1] onto groups of neurons: the shape of every
+    chemical sense here. ``OlfactionEncoder`` is the same class; the artifact section
+    (``olfaction``, ``gustation``, ``thermo``) says which sense it is."""
+
+
+class OlfactionEncoder(ChannelEncoder):
     def __init__(self, n_neurons: int, *, channels, matrix: sp.spmatrix, targets,
                  gain: float = 15.0, adapt: float = 0.0, device: str = "cpu"):
         """

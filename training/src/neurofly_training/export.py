@@ -92,6 +92,7 @@ def body_model_from_env(env, name: str, meta: dict | None = None) -> BodyModel:
     return BodyModel(env.brain, readout_idx=env.readout_idx, proprio=proprio,
                      layout=ActuatorLayout(ACTUATOR_NAMES), obs_keys=env.body.obs_keys,
                      obs_slices=slices, config=config, punish_idx=env.pops.ppl1,
+                     reward_idx=env.pops.pam,
                      neuron_ids=env.cx.neurons["bodyId"].values,
                      neuron_types=env.cx.neurons["type"].values,
                      neuron_superclass=env.cx.neurons["superclass"].values,

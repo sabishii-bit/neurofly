@@ -53,10 +53,14 @@ class ModelConfig:
     include_audio: bool = False     # PC: append the audio band levels to the features
     include_detections: bool = False  # PC: append the detection grids to the features
     include_odours: bool = False    # PC: append the odour channels to the features
+    include_tastes: bool = False    # PC: append the taste channels to the features
+    include_thermo: bool = False    # PC: append the temperature/humidity channels
     include_proprio: bool = False   # body: append the raw observation to the features
-    plasticity: bool = False        # reward acts as dopamine on synapses onto the readout
+    plasticity: bool = False        # reward acts as dopamine on a set of synapses
     plasticity_lr: float = 1e-3
-    dopamine_punish: float = 0.0    # mV on the punishment neurons while reward is negative
+    plasticity_target: str = "readout"  # "readout": all -> readout; "mbon": Kenyon cells -> MBONs
+    dopamine_punish: float = 0.0    # mV on the punishment (PPL1) neurons while reward < 0
+    dopamine_reward: float = 0.0    # mV on the reward (PAM) neurons while reward > 0
     name: str = "neurofly"
     meta: dict = field(default_factory=dict)   # provenance: subset, run, options
 
@@ -80,12 +84,13 @@ class BrainModel:
     def __init__(self, brain: LIFBrain, *, readout_idx, policy=None,
                  config: ModelConfig | None = None, punish_idx=None, neuron_ids=None,
                  neuron_types=None, neuron_superclass=None, neuron_positions=None,
-                 positions_known=None):
+                 positions_known=None, reward_idx=None):
         self.brain = brain
         self.readout_idx = np.asarray(readout_idx, dtype=np.int64)
         self.policy = policy
         self.config = config or ModelConfig()
         self.punish_idx = None if punish_idx is None else np.asarray(punish_idx, dtype=np.int64)
+        self.reward_idx = None if reward_idx is None else np.asarray(reward_idx, dtype=np.int64)
         self.neuron_ids = None if neuron_ids is None else np.asarray(neuron_ids, dtype=np.int64)
         self.neuron_types = None if neuron_types is None else np.asarray(neuron_types, dtype=object)
         self.neuron_superclass = (None if neuron_superclass is None
@@ -104,11 +109,21 @@ class BrainModel:
         self.warmup_steps = int(round(c.warmup_ms / brain.dt))
         self.plasticity = None
         if c.plasticity:
-            self.plasticity = DopamineHebbian(brain, pre_idx=np.arange(brain.n),
-                                              post_idx=self.readout_idx, lr=c.plasticity_lr)
-        self._punish = None
+            pre, post = np.arange(brain.n), self.readout_idx
+            if c.plasticity_target == "mbon":
+                pre, post = self._by_type("^KC"), self._by_type("^MBON")
+                if not len(pre) or not len(post):
+                    raise ValueError("plasticity target 'mbon' needs Kenyon cells and mushroom "
+                                     "body output neurons in the type annotations")
+            elif c.plasticity_target != "readout":
+                raise ValueError(f"unknown plasticity target {c.plasticity_target!r}")
+            self.plasticity = DopamineHebbian(brain, pre_idx=pre, post_idx=post,
+                                              lr=c.plasticity_lr)
+        self._punish = self._reward = None
         if c.dopamine_punish > 0 and self.punish_idx is not None and len(self.punish_idx):
             self._punish = brain.drive(self.punish_idx, c.dopamine_punish)
+        if c.dopamine_reward > 0 and self.reward_idx is not None and len(self.reward_idx):
+            self._reward = brain.drive(self.reward_idx, c.dopamine_reward)
         self._fresh = True
         self.t = 0
         self.last_spikes = 0
@@ -134,7 +149,22 @@ class BrainModel:
         named = {"readout": self.readout_idx}
         if self.punish_idx is not None:
             named["punish"] = self.punish_idx
+        if self.reward_idx is not None:
+            named["reward"] = self.reward_idx
+        if self.neuron_types is not None:
+            for name, pat in (("kenyon", "^KC"), ("mbon", "^MBON"),
+                              ("compass", r"^(?:EPG|PEN|PEG|Delta7|EL)\b")):
+                idx = self._by_type(pat)
+                if len(idx):
+                    named[name] = idx
         return named
+
+    def _by_type(self, pattern: str) -> np.ndarray:
+        """Neurons whose type matches, straight from the annotations (no named
+        populations involved, so ``populations`` can use it)."""
+        if self.neuron_types is None:
+            return np.zeros(0, dtype=np.int64)
+        return resolve({"type_re": pattern}, n=self.brain.n, types=self.neuron_types)
 
     def select(self, sel: dict) -> np.ndarray:
         """Neuron indices for a selection dict (see ``neurofly_core.selection``)."""
@@ -201,10 +231,13 @@ class BrainModel:
         self.last_activity = None
 
     def _run(self, drive: torch.Tensor, reward: float = 0.0) -> None:
-        """Run the brain for one observation under ``drive`` (plus punishment when the
-        reward is negative), with plasticity and the probe."""
+        """Run the brain for one observation under ``drive`` (plus the punishment
+        dopamine neurons when the reward is negative and the reward ones when it is
+        positive), with plasticity and the probe."""
         if reward < 0 and self._punish is not None:
             drive = drive + self._punish
+        if reward > 0 and self._reward is not None:
+            drive = drive + self._reward
         n_steps = self.substeps + (self.warmup_steps if self._fresh else 0)
         self._fresh = False
         before = self.brain.total_spikes
@@ -244,8 +277,10 @@ class BrainModel:
         lines = [f"{c.name} ({self.kind}): {self.brain.n:,} neurons, {self.brain.n_edges:,} "
                  f"synapses, dt {self.brain.dt} ms, {c.brain_ms:g} ms per observation "
                  f"({self.brain.backend})",
-                 f"  policy: {pol}; plasticity {'on' if self.plasticity else 'off'}; "
-                 f"punishment {c.dopamine_punish:g} mV; annotations "
+                 f"  policy: {pol}; plasticity "
+                 f"{('on (' + c.plasticity_target + ')') if self.plasticity else 'off'}; "
+                 f"punishment {c.dopamine_punish:g} mV; reward {c.dopamine_reward:g} mV; "
+                 f"annotations "
                  f"{'yes' if self.neuron_types is not None else 'no'}; positions "
                  f"{'yes' if self.neuron_positions is not None else 'no'}"]
         for m in self.manipulations:
@@ -265,21 +300,27 @@ class Model(BrainModel):
                  retina: RetinaEncoder, audition: AuditionEncoder | None = None,
                  detection: DetectionEncoder | None = None,
                  olfaction: OlfactionEncoder | None = None,
+                 gustation: OlfactionEncoder | None = None,
+                 thermo: OlfactionEncoder | None = None,
                  policy=None, config: ModelConfig | None = None, punish_idx=None,
                  neuron_ids=None, neuron_types=None, neuron_superclass=None,
-                 neuron_positions=None, positions_known=None):
+                 neuron_positions=None, positions_known=None, reward_idx=None):
         super().__init__(brain, readout_idx=readout_idx, policy=policy, config=config,
                          punish_idx=punish_idx, neuron_ids=neuron_ids, neuron_types=neuron_types,
                          neuron_superclass=neuron_superclass, neuron_positions=neuron_positions,
-                         positions_known=positions_known)
+                         positions_known=positions_known, reward_idx=reward_idx)
         self.layout = layout
         self.retina = retina
         self.audition = audition
         self.detection = detection
         self.olfaction = olfaction
+        self.gustation = gustation
+        self.thermo = thermo
         self.include_audio = self.config.include_audio and audition is not None
         self.include_detections = self.config.include_detections and detection is not None
         self.include_odours = self.config.include_odours and olfaction is not None
+        self.include_tastes = self.config.include_tastes and gustation is not None
+        self.include_thermo = self.config.include_thermo and thermo is not None
         self._frame = None
         self._chunk = None
 
@@ -292,9 +333,21 @@ class Model(BrainModel):
             n += self.audition.n_bands
         if self.include_detections:
             n += self.detection.n_inputs
-        if self.include_odours:
-            n += self.olfaction.n_channels
+        for sense, _, include in self.senses():
+            if include:
+                n += sense.n_channels
         return n
+
+    def senses(self):
+        """The chemical senses present: (encoder, the observe keyword, whether its
+        channels are appended to the features)."""
+        out = []
+        for enc, kw, inc in ((self.olfaction, "odours", self.include_odours),
+                             (self.gustation, "tastes", self.include_tastes),
+                             (self.thermo, "thermo", self.include_thermo)):
+            if enc is not None:
+                out.append((enc, kw, inc))
+        return out
 
     @property
     def n_actions(self) -> int:
@@ -307,8 +360,9 @@ class Model(BrainModel):
             named["audition"] = self.audition.targets
         if self.detection is not None:
             named["detection"] = self.detection.targets
-        if self.olfaction is not None:
-            named["olfaction"] = self.olfaction.targets
+        for enc, kw, _ in self.senses():
+            named[{"odours": "olfaction", "tastes": "gustation", "thermo": "thermo"}[kw]] = \
+                enc.targets
         return named
 
     def reset(self) -> None:
@@ -318,8 +372,8 @@ class Model(BrainModel):
             self.audition.reset()
         if self.detection is not None:
             self.detection.reset()
-        if self.olfaction is not None:
-            self.olfaction.reset()
+        for enc, _, _ in self.senses():
+            enc.reset()
         self._frame = self._chunk = None
 
     def features(self) -> np.ndarray:
@@ -330,17 +384,20 @@ class Model(BrainModel):
             parts.append(self.audition.bands(self._chunk))
         if self.include_detections:
             parts.append(self.detection.levels)
-        if self.include_odours:
-            parts.append(self.olfaction.levels)
+        for enc, _, include in self.senses():
+            if include:
+                parts.append(enc.levels)
         return np.concatenate(parts).astype(np.float32)
 
     def observe(self, frame: np.ndarray, audio: np.ndarray | None = None,
-                reward: float = 0.0, detections=None, odours=None) -> np.ndarray:
+                reward: float = 0.0, detections=None, odours=None, tastes=None,
+                thermo=None) -> np.ndarray:
         """Drive the neurons with a frame (RGB uint8), the sound since the last
         observation and, when the model has the encoders, the objects a detector found
-        in the frame and the odour channels; run the brain for ``brain_ms``; return the
-        feature vector. ``reward`` is dopamine for plasticity and, when negative,
-        punishment. Odours are held between observations; None keeps the last."""
+        in the frame and the odour, taste and temperature channels; run the brain for
+        ``brain_ms``; return the feature vector. ``reward`` is dopamine for plasticity
+        and drives the punishment neurons when negative, the reward neurons when
+        positive. Channel senses are held between observations; None keeps the last."""
         self._frame = np.asarray(frame)
         self._chunk = audio
         drive = self.retina(self._frame)
@@ -348,14 +405,16 @@ class Model(BrainModel):
             drive = drive + self.audition(audio)
         if self.detection is not None:
             drive = drive + self.detection(detections)
-        if self.olfaction is not None:
-            drive = drive + self.olfaction(odours)
+        given = {"odours": odours, "tastes": tastes, "thermo": thermo}
+        for enc, kw, _ in self.senses():
+            drive = drive + enc(given[kw])
         self._run(drive, reward)
         return self.features()
 
     def step(self, frame: np.ndarray, audio: np.ndarray | None = None,
-             reward: float = 0.0, detections=None, odours=None) -> tuple[ControlState, dict]:
-        features = self.observe(frame, audio, reward, detections, odours)
+             reward: float = 0.0, detections=None, odours=None, tastes=None,
+             thermo=None) -> tuple[ControlState, dict]:
+        features = self.observe(frame, audio, reward, detections, odours, tastes, thermo)
         action = self.act(features)
         state = self.layout.decode(action)
         info = {"t": self.t, "spikes": self.last_spikes, "action": action.tolist(),

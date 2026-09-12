@@ -53,7 +53,9 @@ class Service(rpc.NeuroFlyServicer):
             r = self.session.step_arrays(frame, audio, req.reward,
                                          observe_only=observe or req.observe_only,
                                          detections=dets,
-                                         odours=list(req.odours) if req.odours else None)
+                                         odours=list(req.odours) if req.odours else None,
+                                         tastes=list(req.tastes) if req.tastes else None,
+                                         thermo=list(req.thermo) if req.thermo else None)
         except Exception as e:
             return pb.StepReply(ok=False, error=f"{type(e).__name__}: {e}")
         reply = pb.StepReply(ok=True, t=r["t"], spikes=r["spikes"])
@@ -111,7 +113,9 @@ class Service(rpc.NeuroFlyServicer):
                             layout_json=json.dumps(i["layout"]), kind=i["kind"],
                             n_obs=i.get("n_obs", 0), obs_json=json.dumps(i.get("obs", {})),
                             detection_classes=i.get("detection_classes") or [],
-                            odour_channels=i.get("odour_channels") or [])
+                            odour_channels=i.get("odour_channels") or [],
+                            taste_channels=i.get("taste_channels") or [],
+                            thermo_channels=i.get("thermo_channels") or [])
 
     def Reset(self, request, context):
         self.session.model.reset()

@@ -46,6 +46,11 @@ populations the interfaces found.
 
 ### Populations
 
+The named populations a model exposes (`--probe name=...`, `--stimulate name=...`):
+`readout`, `retina`, `audition`, `detection`, `olfaction`, `gustation`, `thermo`, `punish`
+(PPL1), `reward` (PAM), `kenyon`, `mbon` and `compass`, the last five when the artifact
+has type annotations.
+
 `neurofly_training.data.populations` names the neuron groups the interfaces talk to:
 
 * **leg motor neurons**, per leg (T1/T2/T3, left/right)
@@ -124,7 +129,19 @@ circuit. An odour channel (`--odours health,danger`) drives the receptor neurons
 glomerulus at a level in [0, 1]. Which glomerulus is engineered; what the antennal lobe
 and mushroom body do with it is the connectome's. With `--plasticity` and
 `--dopamine-punish`, punishment arriving while an odour is present changes the synapses
-that odour's activity reached, which is the fly's own form of aversive learning.
+that odour's activity reached, which is the fly's own form of aversive learning. Taste
+(`--tastes`) and temperature and humidity (`--thermo`) are the same encoder onto the
+gustatory and thermo/hygrosensory neuron types.
+
+### Dopamine and the mushroom body
+
+Two dopamine populations teach the mushroom body: PPL1 (punishment, `--dopamine-punish`)
+and PAM (reward, `--dopamine-reward`). The 4,064 Kenyon cells carry the odour code and
+their synapses onto the 97 output neurons are where the fly learns. `--plasticity-target
+mbon` puts the three-factor rule on exactly those synapses: eligibility from a Kenyon cell
+spike followed by an output neuron spike, turned into a weight change by whichever
+dopamine arrives. The compass (EPG, PEG, Delta7, EL) is the other internal circuit
+exposed by name, as a population and a readout.
 
 ## Readouts and outputs
 

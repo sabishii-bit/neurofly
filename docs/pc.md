@@ -170,6 +170,40 @@ while a channel stays constant, as receptors do; `--include-odours` also hands t
 values to the policy directly. The channels travel in the artifact; the meaning of each is
 yours.
 
+### Taste and temperature
+
+Two more senses have the same shape. `--tastes sugar,bitter` drives gustatory receptor
+neurons (one neuron type per channel, on the legs and proboscis) from your Task's
+`tastes()` hook, and `--thermo heat,wet` drives the thermo- and hygrosensory neurons from
+`thermo()`. "You touched something good or bad" is a taste; "you are on fire" or "in
+water" is a temperature. `--taste-gain`, `--thermo-gain`, `--include-tastes` and
+`--include-thermo` work as for odours, and the protocol carries `tastes` and `thermo` on
+the step like `odours`.
+
+### Reward and punishment, where the fly has them
+
+The fly's dopamine comes in two populations: the PPL1 cluster signals punishment and the
+PAM cluster signals reward. `--dopamine-punish MV` drives PPL1 while the reward is negative
+and `--dopamine-reward MV` drives PAM while it is positive, so both arrive where the
+mushroom body expects them. `--plasticity-target mbon` then puts `--plasticity` on the
+synapses from Kenyon cells to the mushroom body output neurons, which is where the fly's
+own associative memory lives: punishment during an odour weakens the synapses that odour
+used, reward strengthens them, and nothing changes in silence. The default target,
+`readout`, keeps learning on the synapses onto the readout neurons instead.
+
+```powershell
+neurofly train --task pc --brain malecns --window "My App" --keys w,a,s,d \
+    --reward my_project.py:MyTask --odours food,danger \
+    --plasticity --plasticity-target mbon --dopamine-reward 20 --dopamine-punish 20
+```
+
+### The compass
+
+The central complex has a heading circuit (EPG, PEG, Delta7 and EL neurons, a ring
+attractor in the living fly). It is a named population (`--probe name=compass`) and a
+readout (`--readout compass`, or `descending+compass`), so a policy can read the brain's
+own heading estimate, or you can watch it while the fly turns.
+
 ## Reward: writing a Task
 
 The raw interface only sees pixels and sound. A `Task` turns them into reward and episode

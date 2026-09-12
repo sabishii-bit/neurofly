@@ -81,6 +81,12 @@ PC options (the same commands):
 | `--odour-gain` | 15 | drive at a channel value of 1, mV |
 | `--odour-adapt` | 0 | 0 to 1: how much the drive fades while a channel stays constant |
 | `--include-odours` | off | also give the policy the odour channels |
+| `--tastes` | none | taste channels onto gustatory receptor neurons, filled by your Task's `tastes()` |
+| `--taste-gain`, `--include-tastes` | 15, off | as for odours |
+| `--thermo` | none | temperature/humidity channels onto thermo- and hygrosensory neurons, from `thermo()` |
+| `--thermo-gain`, `--include-thermo` | 15, off | as for odours |
+| `--dopamine-reward` | 0 | mV on the PAM dopamine neurons while reward is positive (`--dopamine-punish` is PPL1 while negative) |
+| `--plasticity-target` | readout | where `--plasticity` acts: `readout` (synapses onto the readout) or `mbon` (Kenyon cells to mushroom-body output neurons) |
 | `--dopamine-punish` | 0 | mV on PPL1 dopamine neurons while reward is negative |
 
 ### train

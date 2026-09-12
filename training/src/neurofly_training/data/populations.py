@@ -47,12 +47,17 @@ class Populations:
         self.auditory = cx.select(superclass="cb_sensory", subclass="auditory")
         self.haltere = cx.select(subclass="haltere")
         self.olfactory = cx.select(class_="olfactory")             # receptor neurons, by glomerulus
-        types = cx.neurons["type"].values[self.olfactory]
-        self.glomeruli = {str(t): self.olfactory[types == t]
-                          for t in sorted({str(t) for t in types if t is not None})}
+        self.glomeruli = self._by_type(self.olfactory)
         self.gustatory = cx.select(class_re="gustat")
+        self.taste_types = self._by_type(self.gustatory)
+        self.thermo = cx.select(type_re=r"^(?:TRN|HRN)_")            # temperature and humidity
+        self.thermo_types = self._by_type(self.thermo)
         self.dopamine = cx.select(class_="DAN")
-        self.ppl1 = cx.select(class_="DAN", type_re=r"^PPL1")
+        self.ppl1 = cx.select(class_="DAN", type_re=r"^PPL1")      # punishment
+        self.pam = cx.select(class_="DAN", type_re=r"^PAM")        # reward
+        self.kenyon = cx.select(type_re=r"^KC")                    # the mushroom body ...
+        self.mbon = cx.select(type_re=r"^MBON")                    # ... and its outputs
+        self.compass = cx.select(type_re=r"^(?:EPG|PEN|PEG|Delta7|EL)\b")   # the heading circuit
         self.all_leg_motor = np.unique(np.concatenate(list(self.leg_motor.values())))
         # game side
         self.cb_motor = cx.select(superclass="cb_motor")
@@ -62,8 +67,14 @@ class Populations:
         self._readouts = {
             "motor": self.all_leg_motor, "descending": self.descending,
             "ascending": self.ascending, "cbmotor": self.cb_motor,
-            "visual": self.visual_projection,
+            "visual": self.visual_projection, "mbon": self.mbon, "compass": self.compass,
         }
+
+    def _by_type(self, idx: np.ndarray) -> dict[str, np.ndarray]:
+        """Neurons of ``idx`` grouped by their type annotation, in name order."""
+        types = self.cx.neurons["type"].values[idx]
+        names = sorted({str(t) for t in types if t is not None and str(t)})
+        return {t: idx[types == t] for t in names}
 
     def readout(self, which: str = "motor+descending") -> np.ndarray:
         """Neurons whose rates the agent sees; ``+``-joined names from
@@ -116,7 +127,10 @@ class Populations:
                      f"wind/gravity {len(self.wind_gravity)}, haltere {len(self.haltere)}, "
                      f"auditory {len(self.auditory)}, olfactory {len(self.olfactory)} in "
                      f"{len(self.glomeruli)} glomeruli, gustatory {len(self.gustatory)}, "
-                     f"dopamine {len(self.dopamine)} (PPL1 {len(self.ppl1)})")
+                     f"dopamine {len(self.dopamine)} (PPL1 {len(self.ppl1)}, PAM {len(self.pam)})")
+        lines.append(f"  mushroom body: {len(self.kenyon)} Kenyon cells, {len(self.mbon)} output "
+                     f"neurons; compass {len(self.compass)}; taste {len(self.gustatory)} in "
+                     f"{len(self.taste_types)} types; thermo/hygro {len(self.thermo)}")
         ret = self.retina()
         lines.append(f"  retina columns: left {len(ret['L']['idx'])}, "
                      f"right {len(ret['R']['idx'])}; "

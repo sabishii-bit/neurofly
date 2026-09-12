@@ -360,12 +360,17 @@ class Connectome:
             connect(retina[s], halves["visual_projection"][k])
             connect(halves["visual_projection"][k], halves["cb_intrinsic"][k])
             connect(halves["cb_intrinsic"][k], halves["descending_neuron"][k])
-        # and a smell path: every glomerulus onto its own few central interneurons, which
-        # already reach the descending readout, so an odour can move the output too
+        # and a smell path through a small mushroom body: receptor neurons onto Kenyon
+        # cells, Kenyon cells onto the output neurons, and those onto the descending
+        # readout, so an odour can move the output and the MBON synapses can learn
+        types = df["type"].fillna("").astype(str).values
         orn = np.flatnonzero(df["class"].values == "olfactory")
-        if len(orn):
-            connect(orn, halves["cb_intrinsic"][0][: max(4, len(halves["cb_intrinsic"][0]) // 4)],
-                    fan_in=4, weight=30.0)
+        kc = np.flatnonzero(np.char.startswith(types.astype(str), "KC"))
+        mbon = np.flatnonzero(np.char.startswith(types.astype(str), "MBON"))
+        if len(orn) and len(kc) and len(mbon):
+            connect(orn, kc, fan_in=8, weight=60.0)
+            connect(kc, mbon, fan_in=8, weight=60.0)
+            connect(mbon, halves["descending_neuron"][0], fan_in=4, weight=60.0)
         # the feed-forward path is excitatory: make its presynaptic neurons cholinergic
         pre_ids = np.unique(cols)
         df.loc[pre_ids, "nt"] = "acetylcholine"
@@ -418,6 +423,14 @@ class Connectome:
         cb = np.flatnonzero(superclass == "cb_intrinsic")
         for k, i in enumerate(cb[:8]):
             df.loc[i, ["class", "type"]] = ["DAN", f"PPL10{1 + k % 8}"]
+        for k, i in enumerate(cb[8:16]):                       # reward dopamine
+            df.loc[i, ["class", "type"]] = ["DAN", f"PAM{1 + k % 8:02d}"]
+        for i in cb[16:56]:                                    # a small mushroom body ...
+            df.loc[i, "type"] = "KCab-c"
+        for k, i in enumerate(cb[56:64]):                      # ... and its output neurons
+            df.loc[i, "type"] = f"MBON{1 + k:02d}"
+        for k, i in enumerate(cb[64:72]):                      # the heading circuit
+            df.loc[i, "type"] = ["EPG", "PEG", "Delta7", "EL"][k % 4]
         motor = np.flatnonzero(superclass == "vnc_motor")
         for k, i in enumerate(motor):
             t, side = LEGS[k % 6]
@@ -425,13 +438,24 @@ class Connectome:
         sens = np.flatnonzero(superclass == "vnc_sensory")
         for k, i in enumerate(sens):
             t, side = LEGS[k % 6]
+            if (k // 6) % 4 == 3:                              # taste on the legs
+                df.loc[i, ["entryNerve", "rootSide", "class", "type"]] = \
+                    [LEG_NERVE[t], side, "gustatory", f"LgLG{1 + k % 3}"]
+                continue
             cls_ = "mechanosensory_proprioceptive" if (k // 6) % 3 == 0 else "mechanosensory_tactile"
             df.loc[i, ["entryNerve", "rootSide", "class"]] = [LEG_NERVE[t], side, cls_]
         head = np.flatnonzero(superclass == "cb_sensory")
         glomeruli = ["ORN_DA1", "ORN_DL3", "ORN_VA1d", "ORN_DM2", "ORN_VM7d", "ORN_DC1"]
         for k, i in enumerate(head):
-            if k % 4 == 3:           # olfactory receptor neurons, a few glomeruli
-                df.loc[i, ["class", "type"]] = ["olfactory", glomeruli[(k // 4) % len(glomeruli)]]
+            if k % 6 == 3:           # olfactory receptor neurons, a few glomeruli
+                df.loc[i, ["class", "type"]] = ["olfactory", glomeruli[(k // 6) % len(glomeruli)]]
+                continue
+            if k % 6 == 4:           # temperature and humidity receptors
+                df.loc[i, ["class", "type"]] = (["thermosensory", "TRN_VP2"] if (k // 6) % 2
+                                                else ["hygrosensory", "HRN_VP4"])
+                continue
+            if k % 6 == 5:           # taste on the proboscis
+                df.loc[i, ["class", "type"]] = ["gustatory", f"LB1{'abc'[(k // 6) % 3]}"]
                 continue
             sub = ["wind_gravity", "haltere", "auditory"][k % 3]
             df.loc[i, ["class", "subclass"]] = ["mechanosensory", sub]

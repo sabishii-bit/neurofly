@@ -48,6 +48,8 @@ message InfoReply {
   string obs_json = 15;           // body: {"keys": [...], "slices": {name: [start, stop]}}
   repeated string detection_classes = 16;   // PC: the classes a detection encoder expects
   repeated string odour_channels = 17;      // PC: the odour channels an olfaction encoder expects
+  repeated string taste_channels = 18;      // PC: the taste channels
+  repeated string thermo_channels = 19;     // PC: the temperature/humidity channels
 }
 
 message StepRequest {
@@ -63,6 +65,8 @@ message StepRequest {
   repeated Detection detections = 10;   // objects a detector found, for a detection encoder
   repeated float odours = 11;           // one value per Info.odour_channels, in [0, 1];
                                         // empty keeps the last odours
+  repeated float tastes = 12;           // one value per Info.taste_channels; empty keeps the last
+  repeated float thermo = 13;           // one value per Info.thermo_channels; empty keeps the last
 }
 
 message Detection {

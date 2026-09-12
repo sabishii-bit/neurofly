@@ -6,7 +6,9 @@ An artifact is a directory:
                          provenance, and one entry per array giving its file, dtype and shape
     brain/*.bin          the synapses (CSC by presynaptic neuron: indptr, indices, values in mV)
     readout/ policy/ punish/ neurons/        shared by both kinds
-    retina/ audition/ detection/ olfaction/  kind "pc":   frames, sound, objects, odours in
+    retina/ audition/ detection/             kind "pc":   frames, sound, objects in
+    olfaction/ gustation/ thermo/            kind "pc":   odours, tastes, temperature in
+    reward/                                  the reward dopamine neurons (optional)
     proprio/                                 kind "body": a body observation in, actuators out
 
 Arrays are raw little-endian binaries with no header; the manifest says
@@ -94,7 +96,7 @@ def _common_manifest(w: _Writer, model: BrainModel, extra: dict | None) -> dict:
             "values": w.array("brain", "values", b.vals.cpu().numpy().astype(np.float32)),
         },
         "readout": {"indices": w.array("readout", "indices", model.readout_idx)},
-        "policy": None, "punish": None, "neurons": None,
+        "policy": None, "punish": None, "reward": None, "neurons": None,
         "features": {"n": model.n_features}, "actions": {"n": model.n_actions},
         "extra": extra or {},
     }
@@ -103,6 +105,8 @@ def _common_manifest(w: _Writer, model: BrainModel, extra: dict | None) -> dict:
                               "tables": w.arrays("policy", model.policy.tables())}
     if model.punish_idx is not None and len(model.punish_idx):
         manifest["punish"] = {"indices": w.array("punish", "indices", model.punish_idx)}
+    if model.reward_idx is not None and len(model.reward_idx):
+        manifest["reward"] = {"indices": w.array("reward", "indices", model.reward_idx)}
     if model.neuron_ids is not None:
         manifest["neurons"] = {"ids": w.array("neurons", "ids", model.neuron_ids),
                                "note": "bodyId of each neuron in the source connectome"}
@@ -138,10 +142,12 @@ def save_model(model: BrainModel, path: str, extra: dict | None = None) -> str:
         if model.detection is not None:
             manifest["detection"] = {"params": model.detection.params(),
                                      "tables": w.arrays("detection", model.detection.tables())}
-        manifest["olfaction"] = None
-        if model.olfaction is not None:
-            manifest["olfaction"] = {"params": model.olfaction.params(),
-                                     "tables": w.arrays("olfaction", model.olfaction.tables())}
+        for section in ("olfaction", "gustation", "thermo"):
+            enc = getattr(model, section)
+            manifest[section] = None
+            if enc is not None:
+                manifest[section] = {"params": enc.params(),
+                                     "tables": w.arrays(section, enc.tables())}
     elif model.kind == "body":
         manifest["body"] = {
             "actuators": list(model.layout.names),
@@ -182,6 +188,7 @@ def _load_common(m: dict, r: _Reader, device: str, backend: str):
                      t_ref=bm["t_ref"], w_syn=1.0, gain=1.0, rate_tau=bm["rate_tau"],
                      device=device, backend=backend)
     punish = r.array(m["punish"]["indices"]) if m.get("punish") else None
+    reward = r.array(m["reward"]["indices"]) if m.get("reward") else None
     ids = r.array(m["neurons"]["ids"]) if m.get("neurons") else None
     types = superclass = None
     if m.get("neurons") and m["neurons"].get("annotations"):
@@ -196,6 +203,7 @@ def _load_common(m: dict, r: _Reader, device: str, backend: str):
             known = r.array(m["neurons"]["positions_known"])
     return brain, n, dict(readout_idx=r.array(m["readout"]["indices"]),
                           config=ModelConfig.from_dict(m["config"]), punish_idx=punish,
+                          reward_idx=reward,
                           neuron_ids=ids, neuron_types=types, neuron_superclass=superclass,
                           neuron_positions=positions, positions_known=known)
 
@@ -233,13 +241,15 @@ def load_model(path: str, device: str = "cpu", backend: str = "auto") -> BrainMo
             detection = DetectionEncoder.from_tables(n, m["detection"]["params"],
                                                      r.arrays(m["detection"]["tables"]),
                                                      device=device)
-        olfaction = None
-        if m.get("olfaction"):
-            olfaction = OlfactionEncoder.from_tables(n, m["olfaction"]["params"],
-                                                     r.arrays(m["olfaction"]["tables"]),
-                                                     device=device)
+        senses = {}
+        for section in ("olfaction", "gustation", "thermo"):
+            senses[section] = None
+            if m.get(section):
+                senses[section] = OlfactionEncoder.from_tables(n, m[section]["params"],
+                                                               r.arrays(m[section]["tables"]),
+                                                               device=device)
         return Model(brain, layout=layout, retina=retina, audition=audition,
-                     detection=detection, olfaction=olfaction,
+                     detection=detection, **senses,
                      policy=_load_policy(m, r, layout, "pc"), **common)
     if m["kind"] == "body":
         b = m["body"]
@@ -290,6 +300,9 @@ def validate(path: str) -> list[str]:
     if b["indices"]["shape"] != b["values"]["shape"]:
         problems.append("brain.indices and brain.values differ in length")
     check(m["readout"]["indices"], "readout", "int64", 1, max_index=n)
+    for key in ("punish", "reward"):
+        if m.get(key):
+            check(m[key]["indices"], key, "int64", 1, max_index=n)
     if m.get("neurons") and m["neurons"].get("positions"):
         pos = m["neurons"]["positions"]
         check(pos, "neurons.positions", "float32", 2)
@@ -325,12 +338,13 @@ def validate(path: str) -> list[str]:
                 check(v, f"detection.{k}", max_index=n if k == "targets" else None)
             if not d["params"].get("classes"):
                 problems.append("detection: no classes")
-        if m.get("olfaction"):
-            o = m["olfaction"]
-            for k, v in o["tables"].items():
-                check(v, f"olfaction.{k}", max_index=n if k == "targets" else None)
-            if not o["params"].get("channels"):
-                problems.append("olfaction: no channels")
+        for section in ("olfaction", "gustation", "thermo"):
+            if m.get(section):
+                o = m[section]
+                for k, v in o["tables"].items():
+                    check(v, f"{section}.{k}", max_index=n if k == "targets" else None)
+                if not o["params"].get("channels"):
+                    problems.append(f"{section}: no channels")
         n_out = ControlLayout.from_dict(m["layout"]).n
     elif m["kind"] == "body":
         body = m["body"]
@@ -370,6 +384,10 @@ def describe(path: str) -> str:
                                      if m.get("detection") else "no"),
                   "  olfaction: " + (", ".join(m["olfaction"]["params"]["channels"])
                                      if m.get("olfaction") else "no"),
+                  "  gustation: " + (", ".join(m["gustation"]["params"]["channels"])
+                                     if m.get("gustation") else "no"),
+                  "  thermo: " + (", ".join(m["thermo"]["params"]["channels"])
+                                  if m.get("thermo") else "no"),
                   f"  features: {m['features']['n']}; actions: {m['actions']['n']} "
                   f"{ControlLayout.from_dict(m['layout']).names}"]
     else:
