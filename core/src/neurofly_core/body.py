@@ -119,10 +119,12 @@ class BodyModel(BrainModel):
 
     def __init__(self, brain, *, readout_idx, proprio: ProprioMap, layout: ActuatorLayout,
                  obs_keys, obs_slices: dict, policy=None, config: ModelConfig | None = None,
-                 punish_idx=None, neuron_ids=None, neuron_types=None, neuron_superclass=None):
+                 punish_idx=None, neuron_ids=None, neuron_types=None, neuron_superclass=None,
+                 neuron_positions=None, positions_known=None):
         super().__init__(brain, readout_idx=readout_idx, policy=policy, config=config,
                          punish_idx=punish_idx, neuron_ids=neuron_ids, neuron_types=neuron_types,
-                         neuron_superclass=neuron_superclass)
+                         neuron_superclass=neuron_superclass, neuron_positions=neuron_positions,
+                         positions_known=positions_known)
         self.proprio = proprio
         self.layout = layout
         self.obs_keys = list(obs_keys)

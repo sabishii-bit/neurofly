@@ -104,6 +104,16 @@ class NeuroFlyStub:
                 request_serializer=neurofly__pb2.Selection.SerializeToString,
                 response_deserializer=neurofly__pb2.Indices.FromString,
                 _registered_method=True)
+        self.Activity = channel.unary_unary(
+                '/neurofly.NeuroFly/Activity',
+                request_serializer=neurofly__pb2.ActivityRequest.SerializeToString,
+                response_deserializer=neurofly__pb2.Count.FromString,
+                _registered_method=True)
+        self.Positions = channel.unary_unary(
+                '/neurofly.NeuroFly/Positions',
+                request_serializer=neurofly__pb2.Empty.SerializeToString,
+                response_deserializer=neurofly__pb2.PositionsReply.FromString,
+                _registered_method=True)
 
 
 class NeuroFlyServicer:
@@ -199,6 +209,20 @@ class NeuroFlyServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Activity(self, request, context):
+        """record every neuron's spikes; replies carry them
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Positions(self, request, context):
+        """where every neuron is, for a viewer
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NeuroFlyServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -271,6 +295,16 @@ def add_NeuroFlyServicer_to_server(servicer, server):
                     servicer.Select,
                     request_deserializer=neurofly__pb2.Selection.FromString,
                     response_serializer=neurofly__pb2.Indices.SerializeToString,
+            ),
+            'Activity': grpc.unary_unary_rpc_method_handler(
+                    servicer.Activity,
+                    request_deserializer=neurofly__pb2.ActivityRequest.FromString,
+                    response_serializer=neurofly__pb2.Count.SerializeToString,
+            ),
+            'Positions': grpc.unary_unary_rpc_method_handler(
+                    servicer.Positions,
+                    request_deserializer=neurofly__pb2.Empty.FromString,
+                    response_serializer=neurofly__pb2.PositionsReply.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -651,6 +685,60 @@ class NeuroFly:
             '/neurofly.NeuroFly/Select',
             neurofly__pb2.Selection.SerializeToString,
             neurofly__pb2.Indices.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Activity(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/neurofly.NeuroFly/Activity',
+            neurofly__pb2.ActivityRequest.SerializeToString,
+            neurofly__pb2.Count.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Positions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/neurofly.NeuroFly/Positions',
+            neurofly__pb2.Empty.SerializeToString,
+            neurofly__pb2.PositionsReply.FromString,
             options,
             channel_credentials,
             insecure,

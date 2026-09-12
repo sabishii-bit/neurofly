@@ -32,6 +32,14 @@ def _layer(L: pb.Layer) -> dict:
     return {"W": W.tolist(), "b": list(L.b)}
 
 
+def _fill_activity(msg: pb.ActivityReply, a: dict) -> None:
+    msg.t = a["t"]
+    msg.indices.extend(a["indices"])
+    msg.counts.extend(a["counts"])
+    for step in a.get("steps", []):
+        msg.steps.add().indices.extend(step)
+
+
 class Service(rpc.NeuroFlyServicer):
     def __init__(self, session: Session):
         self.session = session
@@ -59,6 +67,8 @@ class Service(rpc.NeuroFlyServicer):
         if "probe" in r:
             reply.probe.spikes.extend(r["probe"]["spikes"])
             reply.probe.rates.extend(r["probe"]["rates"])
+        if "activity" in r:
+            _fill_activity(reply.activity, r["activity"])
         return reply
 
     def _body(self, req: pb.BodyRequest, observe: bool) -> pb.BodyReply:
@@ -75,6 +85,8 @@ class Service(rpc.NeuroFlyServicer):
         if "probe" in r:
             reply.probe.spikes.extend(r["probe"]["spikes"])
             reply.probe.rates.extend(r["probe"]["rates"])
+        if "activity" in r:
+            _fill_activity(reply.activity, r["activity"])
         return reply
 
     def BodyStep(self, request, context):
@@ -142,22 +154,37 @@ class Service(rpc.NeuroFlyServicer):
         self.session.model.clear()
         return pb.Ack(ok=True)
 
+    def Activity(self, request, context):
+        return pb.Count(n=self.session.model.watch_activity(request.on, request.substeps))
+
+    def Positions(self, request, context):
+        m = self.session.handle({"op": "positions"})
+        reply = pb.PositionsReply(n=m["n"], unit=m["unit"])
+        if m["positions"] is not None:
+            reply.positions.extend(v for row in m["positions"] for v in row)
+            reply.known.extend(m["known"])
+        reply.superclass.extend(m["superclass"] or [])
+        for k, v in m["populations"].items():
+            reply.populations[k].indices.extend(v)
+        return reply
+
     def Select(self, request, context):
         return pb.Indices(indices=self.session.model.select(_selection(request)).tolist())
 
 
-def make_server(model: Model, address: str = "127.0.0.1:50051", workers: int = 4):
+def make_server(model: Model, address: str = "127.0.0.1:50051", workers: int = 4,
+                after_step=()):
     """A started gRPC server; call ``.wait_for_termination()`` or ``.stop(0)``."""
     import grpc
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=workers),
                          options=[("grpc.max_receive_message_length", 64 * 1024 * 1024)])
-    rpc.add_NeuroFlyServicer_to_server(Service(Session(model)), server)
+    rpc.add_NeuroFlyServicer_to_server(Service(Session(model, after_step)), server)
     server.bound_port = server.add_insecure_port(address)   # the real port for ":0"
     server.start()
     return server
 
 
-def serve_grpc(model: Model, address: str = "127.0.0.1:50051") -> None:
-    server = make_server(model, address)
+def serve_grpc(model: Model, address: str = "127.0.0.1:50051", after_step=()) -> None:
+    server = make_server(model, address, after_step=after_step)
     print(f"neurofly-core listening on grpc://{address}", file=sys.stderr, flush=True)
     server.wait_for_termination()

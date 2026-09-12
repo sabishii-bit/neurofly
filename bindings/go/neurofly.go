@@ -66,6 +66,24 @@ type Result struct {
 	DY       float64   `json:"dy"`
 	Scroll   float64   `json:"scroll"`
 	Features []float64 `json:"features"`
+	Activity *Activity `json:"activity,omitempty"`
+}
+
+// Activity is every neuron that fired during one step (after Client.Activity(true)).
+type Activity struct {
+	T       int     `json:"t"`
+	Indices []int64 `json:"indices"`
+	Counts  []int   `json:"counts"`
+}
+
+// BrainMap is where every neuron is, for drawing the brain.
+type BrainMap struct {
+	N           int                `json:"n"`
+	Unit        string             `json:"unit"`
+	Positions   [][]float32        `json:"positions"`
+	Known       []bool             `json:"known"`
+	Superclass  []string           `json:"superclass"`
+	Populations map[string][]int64 `json:"populations"`
 }
 
 // Layer is one dense layer of an MLP policy: W is out x in.
@@ -214,6 +232,23 @@ func (c *Client) SetPolicyMLP(layers []Layer, activation string, obsMean, obsVar
 }
 
 // Save writes the runtime's current model (with the installed policy) as an artifact.
+// Activity records every neuron's spikes: later Step / Observe results carry them in
+// Result.Activity. It returns the neuron count.
+func (c *Client) Activity(on bool) (int, error) {
+	var r struct{ N int `json:"n"` }
+	err := c.call(map[string]any{"op": "activity", "on": on}, &r)
+	return r.N, err
+}
+
+// Positions returns every neuron's position (micrometres) and superclass, for a viewer.
+func (c *Client) Positions() (*BrainMap, error) {
+	var m BrainMap
+	if err := c.call(map[string]any{"op": "positions"}, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
 func (c *Client) Save(dir, name string) (string, error) {
 	var env envelope
 	req := map[string]any{"op": "save", "path": dir}

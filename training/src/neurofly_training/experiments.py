@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from neurofly_core.experiments import wants_activity
 from neurofly_core.selection import parse_spec
 
 
@@ -23,7 +24,7 @@ def apply_to_body_env(env, args) -> list[str]:
     done = []
     brain, cx = getattr(env, "brain", None), getattr(env, "cx", None)
     if brain is None:
-        if args.stimulate or args.silence or args.probe:
+        if args.stimulate or args.silence or args.probe or wants_activity(args):
             done.append("no brain in this environment: experiments ignored")
         return done
     for spec in args.stimulate:
@@ -40,4 +41,7 @@ def apply_to_body_env(env, args) -> list[str]:
         done.append(f"silence {sel}: {len(idx)} neurons")
     if args.probe:
         done.append("probes are recorded on PC tasks only")
+    if wants_activity(args):
+        n = env.watch_activity(True, substeps=bool(getattr(args, "activity_substeps", False)))
+        done.append(f"activity: recording every spike of {n} neurons")
     return done

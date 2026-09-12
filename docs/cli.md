@@ -227,6 +227,9 @@ the fly going when the keyboard focus leaves the window it started on; by defaul
 | `--silence SEL` | the selection never spikes; repeatable |
 | `--probe SEL` | record the selection's spikes and rates every step |
 | `--probe-out FILE` | write the probe as `.npz` at the end |
+| `--activity-out FILE.json` | record every neuron's spikes per step, with positions, for `examples/brain_viewer.html` |
+| `--activity-ws HOST:PORT` | stream the same live over a WebSocket (`brain_viewer.html?ws=...`) |
+| `--activity-substeps` | activity per brain step rather than per observation |
 
 `SEL` is `indices=1,2`, `ids=...`, `type_re=^PPL1`, `superclass=descending_neuron`, or
 `name=readout|retina|audition|punish`.

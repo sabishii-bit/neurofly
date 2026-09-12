@@ -111,6 +111,12 @@ def _common_manifest(w: _Writer, model: BrainModel, extra: dict | None) -> dict:
             with open(os.path.join(w.root, "neurons", "annotations.json"), "w") as f:
                 json.dump(ann, f)
             manifest["neurons"]["annotations"] = "neurons/annotations.json"
+        if model.neuron_positions is not None:
+            manifest["neurons"]["positions"] = w.array("neurons", "positions",
+                                                       model.neuron_positions)
+            manifest["neurons"]["positions_known"] = w.array("neurons", "positions_known",
+                                                             model.positions_known)
+            manifest["neurons"]["positions_unit"] = "micrometre"
     return manifest
 
 
@@ -173,9 +179,15 @@ def _load_common(m: dict, r: _Reader, device: str, backend: str):
             ann = json.load(f)
         types = np.asarray([t or None for t in ann["type"]], dtype=object)
         superclass = np.asarray([t or None for t in ann["superclass"]], dtype=object)
+    positions = known = None
+    if m.get("neurons") and m["neurons"].get("positions"):
+        positions = r.array(m["neurons"]["positions"])
+        if m["neurons"].get("positions_known"):
+            known = r.array(m["neurons"]["positions_known"])
     return brain, n, dict(readout_idx=r.array(m["readout"]["indices"]),
                           config=ModelConfig.from_dict(m["config"]), punish_idx=punish,
-                          neuron_ids=ids, neuron_types=types, neuron_superclass=superclass)
+                          neuron_ids=ids, neuron_types=types, neuron_superclass=superclass,
+                          neuron_positions=positions, positions_known=known)
 
 
 def _load_policy(m: dict, r: _Reader, layout, kind: str):
@@ -257,6 +269,13 @@ def validate(path: str) -> list[str]:
     if b["indices"]["shape"] != b["values"]["shape"]:
         problems.append("brain.indices and brain.values differ in length")
     check(m["readout"]["indices"], "readout", "int64", 1, max_index=n)
+    if m.get("neurons") and m["neurons"].get("positions"):
+        pos = m["neurons"]["positions"]
+        check(pos, "neurons.positions", "float32", 2)
+        if pos["shape"] != [n, 3]:
+            problems.append(f"neurons.positions has shape {pos['shape']}, expected [{n}, 3]")
+        if m["neurons"].get("positions_known"):
+            check(m["neurons"]["positions_known"], "neurons.positions_known", "bool", 1)
     if m["kind"] == "pc":
         rp, rt = m["retina"]["params"], m["retina"]["tables"]
         if rp["mode"] == "hex":
@@ -321,6 +340,9 @@ def describe(path: str) -> str:
         lines += [f"  observation: {body['obs_dim']} entries ({', '.join(body['obs_keys'])})",
                   f"  features: {m['features']['n']}; actuators: {len(body['actuators'])}"]
     lines.append(f"  policy: {pol}")
+    if m.get("neurons"):
+        lines.append("  neurons: ids" + (", annotations" if m["neurons"].get("annotations") else "")
+                     + (", positions" if m["neurons"].get("positions") else ""))
     if m.get("extra"):
         lines.append(f"  extra: {json.dumps(m['extra'])[:300]}")
     return "\n".join(lines)

@@ -21,6 +21,7 @@ Experiments on the brain while it runs, on either kind:
     model.stimulate({"type_re": "^PPL1"}, 20.0)   # extra drive, mV, every step
     model.silence({"superclass": "descending_neuron"})
     model.probe({"name": "readout"})              # model.last_probe after each observe
+    model.watch_activity(True)                    # model.last_activity: every neuron that fired
     model.clear()                                 # undo all of the above
 """
 from __future__ import annotations
@@ -30,6 +31,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 import torch
 
+from neurofly_core.activity import SpikeAccumulator
 from neurofly_core.brain.lif import LIFBrain
 from neurofly_core.brain.plasticity import DopamineHebbian
 from neurofly_core.controls import ControlLayout, ControlState
@@ -73,7 +75,8 @@ class BrainModel:
 
     def __init__(self, brain: LIFBrain, *, readout_idx, policy=None,
                  config: ModelConfig | None = None, punish_idx=None, neuron_ids=None,
-                 neuron_types=None, neuron_superclass=None):
+                 neuron_types=None, neuron_superclass=None, neuron_positions=None,
+                 positions_known=None):
         self.brain = brain
         self.readout_idx = np.asarray(readout_idx, dtype=np.int64)
         self.policy = policy
@@ -83,6 +86,15 @@ class BrainModel:
         self.neuron_types = None if neuron_types is None else np.asarray(neuron_types, dtype=object)
         self.neuron_superclass = (None if neuron_superclass is None
                                   else np.asarray(neuron_superclass, dtype=object))
+        self.neuron_positions = None
+        self.positions_known = None
+        if neuron_positions is not None:
+            self.neuron_positions = np.asarray(neuron_positions, dtype=np.float32).reshape(-1, 3)
+            if self.neuron_positions.shape[0] != brain.n:
+                raise ValueError("neuron_positions must have one row per neuron")
+            known = (np.isfinite(self.neuron_positions).all(axis=1) if positions_known is None
+                     else np.asarray(positions_known, dtype=bool))
+            self.positions_known = known
         c = self.config
         self.substeps = max(1, int(round(c.brain_ms / brain.dt)))
         self.warmup_steps = int(round(c.warmup_ms / brain.dt))
@@ -98,6 +110,8 @@ class BrainModel:
         self.last_spikes = 0
         self.probe_idx: np.ndarray | None = None
         self.last_probe: dict | None = None
+        self.activity: SpikeAccumulator | None = None
+        self.last_activity: dict | None = None
         self.manipulations: list[dict] = []
 
     # --- shapes (subclasses extend) ----------------------------------------------------
@@ -146,6 +160,27 @@ class BrainModel:
         self.probe_idx = self.select(sel)
         return int(len(self.probe_idx))
 
+    def watch_activity(self, on: bool = True, substeps: bool = False) -> int:
+        """Record every neuron's spikes: after each observe, ``last_activity`` holds the
+        indices that fired and their counts (and, with ``substeps``, the set that fired
+        on each brain step). Returns the neuron count, 0 when turned off."""
+        if not on:
+            self.activity, self.last_activity = None, None
+            return 0
+        self.activity = SpikeAccumulator(self.brain.n, substeps=substeps,
+                                         device=self.brain.device)
+        return int(self.brain.n)
+
+    def activity_map(self) -> dict:
+        """What a viewer needs to draw the brain: positions (micrometres), which of them
+        are real somas, superclasses and the named populations."""
+        sc = None
+        if self.neuron_superclass is not None:
+            sc = ["" if t is None else str(t) for t in self.neuron_superclass]
+        return {"n": int(self.brain.n), "unit": "micrometre",
+                "positions": self.neuron_positions, "known": self.positions_known,
+                "superclass": sc, "populations": self.populations()}
+
     def clear(self) -> None:
         """Undo every stimulation and silencing; keep the probe."""
         self.brain.clear_manipulations()
@@ -159,6 +194,7 @@ class BrainModel:
         self.t = 0
         self.last_spikes = 0
         self.last_probe = None
+        self.last_activity = None
 
     def _run(self, drive: torch.Tensor, reward: float = 0.0) -> None:
         """Run the brain for one observation under ``drive`` (plus punishment when the
@@ -172,16 +208,22 @@ class BrainModel:
         if self.probe_idx is not None:
             probe_t = torch.as_tensor(self.probe_idx, device=self.brain.device)
             counts = torch.zeros(len(self.probe_idx), device=self.brain.device)
+        if self.activity is not None:
+            self.activity.begin()
         for _ in range(n_steps):
             spikes = self.brain.step(drive)
             if self.plasticity is not None:
                 self.plasticity.step(reward)
             if probe_t is not None:
                 counts += spikes[probe_t].to(counts.dtype)
+            if self.activity is not None:
+                self.activity.add(spikes)
         self.last_spikes = self.brain.total_spikes - before
         if probe_t is not None:
             self.last_probe = {"spikes": counts.cpu().numpy().astype(np.int64),
                                "rates": self.brain.rates(self.probe_idx)}
+        if self.activity is not None:
+            self.last_activity = self.activity.finish()
         self.t += 1
 
     def readout_features(self) -> np.ndarray:
@@ -200,7 +242,8 @@ class BrainModel:
                  f"({self.brain.backend})",
                  f"  policy: {pol}; plasticity {'on' if self.plasticity else 'off'}; "
                  f"punishment {c.dopamine_punish:g} mV; annotations "
-                 f"{'yes' if self.neuron_types is not None else 'no'}"]
+                 f"{'yes' if self.neuron_types is not None else 'no'}; positions "
+                 f"{'yes' if self.neuron_positions is not None else 'no'}"]
         for m in self.manipulations:
             lines.append(f"  manipulation: {m}")
         return lines
@@ -217,10 +260,12 @@ class Model(BrainModel):
     def __init__(self, brain: LIFBrain, *, readout_idx, layout: ControlLayout,
                  retina: RetinaEncoder, audition: AuditionEncoder | None = None,
                  policy=None, config: ModelConfig | None = None, punish_idx=None,
-                 neuron_ids=None, neuron_types=None, neuron_superclass=None):
+                 neuron_ids=None, neuron_types=None, neuron_superclass=None,
+                 neuron_positions=None, positions_known=None):
         super().__init__(brain, readout_idx=readout_idx, policy=policy, config=config,
                          punish_idx=punish_idx, neuron_ids=neuron_ids, neuron_types=neuron_types,
-                         neuron_superclass=neuron_superclass)
+                         neuron_superclass=neuron_superclass, neuron_positions=neuron_positions,
+                         positions_known=positions_known)
         self.layout = layout
         self.retina = retina
         self.audition = audition

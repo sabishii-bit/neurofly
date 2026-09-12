@@ -14,7 +14,8 @@ A trained controller on disk, readable from any language. Version 1.
   audition/              matrix_*.bin targets.bin              (optional)
   policy/                W.bin b.bin  |  W0.bin b0.bin ... obs_mean.bin obs_var.bin   (optional)
   punish/                indices.bin                           (optional)
-  neurons/               ids.bin                               (optional, provenance)
+  neurons/               ids.bin annotations.json              (optional, provenance)
+                         positions.bin positions_known.bin     (optional, a map of the brain)
 ```
 
 Every array is a raw little-endian binary with no header. The manifest describes each one:
@@ -51,6 +52,7 @@ annotations; they differ in the encoders and the output layout.
 | `policy` | `params` and `tables` of the policy, or `null` (then only `observe` is possible) |
 | `punish.indices` | int64 array: neurons driven while reward is negative, or `null` |
 | `neurons.ids` | int64 array: the source connectome's id of every neuron, or `null` |
+| `neurons.positions` | float32 array `[n_neurons, 3]`: soma position in micrometres (optional, see below) |
 | `extra` | free-form provenance (the training run's config) |
 
 ### config
@@ -146,6 +148,13 @@ by `mouse_speed`, scroll by `scroll_speed`; stick axes are the entry itself; the
 string per neuron (empty when unknown). They make selections by type or superclass possible
 at runtime (below); a consumer that does not need them can ignore them.
 
+`neurons.positions` (float32, `[n_neurons, 3]`, `neurons.positions_unit` = `"micrometre"`)
+is where each neuron's soma is in the source volume, for drawing the brain. Neurons with no
+soma in the volume (sensory neurons) are given a position near their annotated group;
+`neurons.positions_known` (bool, `[n_neurons]`) is true for real somas and false for placed
+ones. The frame is the connectome's own (MaleCNS: x right, y down, z front to back); it is
+not related to any body model.
+
 ### body (kind body only)
 
 | Key | Meaning |
@@ -190,6 +199,8 @@ WebSocket. The first line written is `{"ok": true, "ready": true, ...info}`.
 | `{"op": "stimulate", <selection>, "mv": 20}` | adds 20 mV of drive to the selected neurons on every brain step; `{"ok": true, "n"}` |
 | `{"op": "silence", <selection>}` | the selected neurons stop spiking; `{"ok": true, "n"}` |
 | `{"op": "probe", <selection>}` / `{"op": "probe", "off": true}` | later `step` / `observe` replies carry `"probe": {"spikes": [...], "rates": [...]}` for those neurons |
+| `{"op": "activity", "on": true, "substeps"?: bool}` | later `step` / `observe` / `body_step` replies carry `"activity": {"t", "indices", "counts", "steps"?}`: every neuron that fired during the observation and how many times (`steps`: the indices per brain step); `{"ok": true, "n"}`. Over `--ws` the sender is also subscribed: it receives every later step's activity as a pushed message, whichever client stepped |
+| `{"op": "positions"}` | `{"ok": true, "n", "unit", "positions": [[x, y, z], ...] or null, "known": [...], "superclass": [...], "populations": {name: [indices]}}` |
 | `{"op": "clear"}` | undoes every stimulation and silencing (the probe stays) |
 | `{"op": "select", <selection>}` | `{"ok": true, "n", "indices"}` |
 | `{"op": "close"}` | `{"ok": true, "bye": true}` and the process exits |
@@ -208,7 +219,8 @@ likes, installs the result and saves a complete artifact.
 `neurofly-core serve <artifact> --grpc host:port` serves the same operations as a gRPC
 service defined in `core/src/neurofly_core/rpc/neurofly.proto`: `Info`, `Reset`, `Step`,
 `Observe`, `Stream` (bidirectional, one reply per request), `BodyStep` and `BodyStream`
-(body artifacts), `SetPolicy`, `Save`, `Stimulate`, `Silence`, `Probe`, `Clear`, `Select`.
+(body artifacts), `SetPolicy`, `Save`, `Stimulate`, `Silence`, `Probe`, `Clear`, `Select`,
+`Activity` and `Positions`.
 `Info.kind` says which kind is loaded; `Info.n_obs` and `Info.obs_json` describe a body
 artifact's observation vector. Frames and audio are `bytes` (no
 base64); a linear policy is one `Layer` with `w` row-major. Generate a client for any

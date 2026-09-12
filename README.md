@@ -32,6 +32,10 @@ protocol that covers both using the brain and training it.
 * **Learning from footage**: an inverse dynamics model labels video that has no input log;
   corrections while the fly plays become new labels (DAgger); template matching and OCR
   helpers turn what is on screen into reward.
+* **Seeing the brain**: every artifact carries each neuron's soma position from the
+  connectome; `--activity-out` records every spike per step and `--activity-ws` streams
+  them live, and `examples/brain_viewer.html` draws the brain as a point cloud that lights
+  up as it fires, with the strongest synapses flashing between neurons.
 * **Safety**: a focus guard stops the fly when the keyboard focus leaves its window, and a
   watchdog releases every key if the loop stalls.
 * **The body elsewhere**: body runs export as artifacts too (observation in, 59 actuators

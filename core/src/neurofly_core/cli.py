@@ -17,7 +17,8 @@ import argparse
 import sys
 import time
 
-from neurofly_core.experiments import ProbeLog, add_experiment_args, apply_experiments
+from neurofly_core.experiments import (ProbeLog, activity_sinks, add_experiment_args,
+                                       apply_experiments)
 
 
 def cmd_info(args):
@@ -41,14 +42,22 @@ def cmd_serve(args):
     print(model.describe(), file=sys.stderr, flush=True)
     for line in apply_experiments(model, args):
         print(line, file=sys.stderr, flush=True)
-    if args.grpc:
-        from neurofly_core.rpc.server import serve_grpc
-        serve_grpc(model, args.grpc)
-    elif args.ws:
-        host, _, port = args.ws.rpartition(":")
-        serve_ws(model, host or "127.0.0.1", int(port))
-    else:
-        serve_stdio(model)
+    sinks = activity_sinks(model, args, fps=1000.0 / model.config.brain_ms)
+    for line in sinks.describe():
+        print(line, file=sys.stderr, flush=True)
+    try:
+        if args.grpc:
+            from neurofly_core.rpc.server import serve_grpc
+            serve_grpc(model, args.grpc, after_step=[sinks.record])
+        elif args.ws:
+            host, _, port = args.ws.rpartition(":")
+            serve_ws(model, host or "127.0.0.1", int(port), after_step=[sinks.record])
+        else:
+            serve_stdio(model, after_step=[sinks.record])
+    finally:
+        saved = sinks.close()
+        if saved:
+            print(f"activity written to {saved}", file=sys.stderr, flush=True)
 
 
 def cmd_run(args):
@@ -71,6 +80,9 @@ def cmd_run(args):
     controls = make_controls("log" if args.dry_run else "pc", model.layout)
     panic = PanicKey(args.panic)
     probe = ProbeLog(model, args.probe_out)
+    sinks = activity_sinks(model, args, fps=args.fps)
+    for line in sinks.describe():
+        print(line, file=sys.stderr)
     print(f"capturing {video.describe()} at {args.fps:g} fps"
           + (f"; sound from {audio.name}" if audio else "")
           + ("; DRY RUN" if args.dry_run else "") + f"; {args.panic} stops", file=sys.stderr)
@@ -102,6 +114,7 @@ def cmd_run(args):
             state, info = model.step(frame, chunk)
             controls.apply(state)
             probe.record()
+            sinks.record()
             steps += 1
             spikes += info["spikes"]
             if time.time() - last >= 1.0:
@@ -118,8 +131,10 @@ def cmd_run(args):
             audio.close()
         panic.close()
     saved = probe.save()
+    activity = sinks.close()
     print(f"stopped after {steps} steps; everything released"
-          + (f"; probe written to {saved}" if saved else ""), file=sys.stderr)
+          + (f"; probe written to {saved}" if saved else "")
+          + (f"; activity written to {activity}" if activity else ""), file=sys.stderr)
 
 
 def main(argv=None):

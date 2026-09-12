@@ -41,6 +41,7 @@ import sys
 
 import numpy as np
 
+from neurofly_core.activity import activity_payload, map_payload
 from neurofly_core.decode.linear import ControlDecoder
 from neurofly_core.decode.mlp import MLPPolicy
 from neurofly_core.model import Model
@@ -85,9 +86,12 @@ class Session:
     """One model, driven by request dicts. ``handle`` never raises; the array-level
     methods (``step_arrays`` and friends) are what the gRPC service calls."""
 
-    def __init__(self, model: Model):
+    STEP_OPS = ("step", "observe", "body_step", "body_observe")
+
+    def __init__(self, model: Model, after_step=()):
         self.model = model
         self.model.reset()
+        self.after_step = list(after_step)   # callables run after every successful step
 
     # --- array-level API --------------------------------------------------------------
 
@@ -98,6 +102,7 @@ class Session:
                "controls": m.layout.names, "layout": m.layout.to_dict(),
                "brain_ms": m.config.brain_ms, "has_policy": m.policy is not None,
                "has_annotations": m.neuron_types is not None,
+               "has_positions": m.neuron_positions is not None,
                "populations": {k: int(len(v)) for k, v in m.populations().items()}}
         if m.kind == "pc":
             out.update({"has_audition": m.audition is not None,
@@ -124,6 +129,10 @@ class Session:
         if m.last_probe is not None:
             out["probe"] = {"spikes": m.last_probe["spikes"].tolist(),
                             "rates": m.last_probe["rates"].tolist()}
+        if m.last_activity is not None:
+            out["activity"] = activity_payload(m.t, m.last_activity)
+        for fn in self.after_step:
+            fn()
         return out
 
     def step_arrays(self, frame: np.ndarray, audio: np.ndarray | None = None,
@@ -142,6 +151,10 @@ class Session:
         if m.last_probe is not None:
             out["probe"] = {"spikes": m.last_probe["spikes"].tolist(),
                             "rates": m.last_probe["rates"].tolist()}
+        if m.last_activity is not None:
+            out["activity"] = activity_payload(m.t, m.last_activity)
+        for fn in self.after_step:
+            fn()
         return out
 
     def policy_from(self, req: dict):
@@ -209,6 +222,11 @@ class Session:
                     m.probe(None)
                     return {"ok": True, "n": 0}
                 return {"ok": True, "n": m.probe(selection_from(req))}
+            if op == "activity":
+                n = m.watch_activity(bool(req.get("on", True)), bool(req.get("substeps")))
+                return {"ok": True, "n": n}
+            if op == "positions":
+                return {"ok": True, **map_payload(m)}
             if op == "clear":
                 m.clear()
                 return {"ok": True}
@@ -222,9 +240,9 @@ class Session:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-def serve_stdio(model: Model) -> None:
+def serve_stdio(model: Model, after_step=()) -> None:
     """Read JSON lines on stdin, write JSON lines on stdout, until close or EOF."""
-    session = Session(model)
+    session = Session(model, after_step)
     out = sys.stdout
     print(json.dumps({"ok": True, "ready": True, **session.info()}), file=out, flush=True)
     for line in sys.stdin:
@@ -242,26 +260,43 @@ def serve_stdio(model: Model) -> None:
             break
 
 
-def serve_ws(model: Model, host: str = "127.0.0.1", port: int = 8765) -> None:
-    """The same protocol over a WebSocket (needs the ``websockets`` package)."""
+def serve_ws(model: Model, host: str = "127.0.0.1", port: int = 8765, after_step=()) -> None:
+    """The same protocol over a WebSocket (needs the ``websockets`` package). A client
+    that sends ``{"op": "activity", "on": true}`` is also *subscribed*: it receives every
+    later step's activity as a pushed message, whichever client drove the step. That is
+    how a viewer watches a brain another program is driving."""
     import asyncio
 
     import websockets
 
-    session = Session(model)
+    session = Session(model, after_step)
+    subscribers: set = set()
 
     async def handler(ws):
         await ws.send(json.dumps({"ok": True, "ready": True, **session.info()}))
-        async for msg in ws:
-            try:
-                req = json.loads(msg)
-            except json.JSONDecodeError as e:
-                await ws.send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}))
-                continue
-            resp = session.handle(req)
-            await ws.send(json.dumps(resp))
-            if resp.get("bye"):
-                break
+        try:
+            async for msg in ws:
+                try:
+                    req = json.loads(msg)
+                except json.JSONDecodeError as e:
+                    await ws.send(json.dumps({"ok": False, "error": f"bad JSON: {e}"}))
+                    continue
+                resp = session.handle(req)
+                if req.get("op") == "activity":
+                    (subscribers.add if req.get("on", True) else subscribers.discard)(ws)
+                await ws.send(json.dumps(resp))
+                if resp.get("bye"):
+                    break
+                if req.get("op") in Session.STEP_OPS and "activity" in resp:
+                    push = json.dumps(resp["activity"])
+                    for other in list(subscribers):
+                        if other is not ws:
+                            try:
+                                await other.send(push)
+                            except Exception:
+                                subscribers.discard(other)
+        finally:
+            subscribers.discard(ws)
 
     async def main():
         async with websockets.serve(handler, host, port, max_size=64 * 1024 * 1024):

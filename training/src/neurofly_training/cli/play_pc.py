@@ -27,7 +27,8 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from neurofly_training.envs import ENV_ARGS, add_env_args, make_env, resolve_env_args
 from neurofly_core.decode.linear import ControlDecoder
-from neurofly_core.experiments import ProbeLog, add_experiment_args, apply_experiments
+from neurofly_core.experiments import (ProbeLog, activity_sinks, add_experiment_args,
+                                       apply_experiments)
 from neurofly_core.io.controls import PanicKey
 from neurofly_core.io.guard import FocusGuard, Watchdog
 from neurofly_training.pc.dagger import CorrectionRecorder
@@ -77,6 +78,9 @@ def main():
     for line in apply_experiments(env.model, args):
         print(line)
     probe = ProbeLog(env.model, args.probe_out)
+    sinks = activity_sinks(env.model, args, fps=args.fps)
+    for line in sinks.describe():
+        print(line)
 
     model = decoder = venv = None
     if policy == "ppo":
@@ -133,6 +137,7 @@ def main():
                 action = rng.uniform(-1, 1, size=env.action_space.shape).astype(np.float32)
             obs, _, term, trunc, info = env.step(action)
             probe.record()
+            sinks.record()
             spikes += info["brain_spikes"]
             steps += 1
             if writer is not None:
@@ -156,8 +161,10 @@ def main():
             out = corrections.close()
             print(f"corrections: {corrections.taken_over} frames of yours -> {out}")
     saved = probe.save()
+    activity = sinks.close()
     print(f"stopped after {steps} steps; everything released"
-          + (f"; probe written to {saved}" if saved else ""))
+          + (f"; probe written to {saved}" if saved else "")
+          + (f"; activity written to {activity}" if activity else ""))
 
 
 if __name__ == "__main__":

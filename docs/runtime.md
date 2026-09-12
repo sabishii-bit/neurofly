@@ -187,6 +187,38 @@ and `ids`. From Python: `model.stimulate(sel, mv)`, `model.silence(sel)`,
 On the body (`neurofly watch --task forward`), `--stimulate` and `--silence` work the same
 way through the connectome's annotations; probes are for PC tasks.
 
+## Watching the brain
+
+Every neuron in an artifact has a position: the soma location from the MaleCNS annotations,
+in micrometres (`neurons.positions` in the manifest). Sensory neurons, whose cell bodies
+lie outside the nervous system, are placed near the neurons they are annotated with and
+flagged in `neurons.positions_known`. Two more experiment options record what every neuron
+does with them:
+
+```powershell
+neurofly-core run artifacts/myapp --window "My App" --activity-out activity.json   # a file
+neurofly play --window "My App" --run runs/x --activity-ws 127.0.0.1:8767          # live
+neurofly watch runs/walk1 --activity-out activity.json                             # the body too
+python -m http.server 8000   # then examples/brain_viewer.html?activity=../activity.json
+                             # or   examples/brain_viewer.html?ws=ws://127.0.0.1:8767
+```
+
+`examples/brain_viewer.html` draws the brain as a point cloud coloured by superclass. A
+spike lights its neuron and the light fades over a few frames, so waves of activity are
+visible crossing the brain. With `&artifact=../artifacts/myapp` it also reads the synapses
+from the artifact and draws the strongest few per neuron (`&edges=2`) as lines that flash
+when their presynaptic neuron fires. `--activity-substeps` records per brain step instead of
+per observation, for a finer animation at about twenty times the size.
+
+The same works for a brain another program is driving. `neurofly-core serve --ws` accepts
+`{"op": "activity", "on": true}` from any client; that client is then *subscribed* and
+receives every later step's activity as a pushed message, whoever sent the step. So a Node
+game loop drives the brain over the WebSocket while a browser tab watches it:
+`brain_viewer.html?ws=ws://127.0.0.1:8765&subscribe=1`. Over stdio or gRPC the step replies
+themselves carry `activity` once it is on, and `{"op": "positions"}` (gRPC `Positions`)
+returns the map. From Python: `model.watch_activity(True)` then `model.last_activity`
+(`indices` and `counts` of the neurons that fired) and `model.activity_map()`.
+
 ## Gamepads
 
 A layout can include gamepad buttons and axes: `--pad-buttons a,b,rb --axes lx,ly,rt`. They

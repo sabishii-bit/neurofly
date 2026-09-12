@@ -37,6 +37,8 @@ KEEP_COLS = ["bodyId", "type", "flywireType", "superclass", "class", "subclass",
              "somaSide", "rootSide", "somaNeuromere", "entryNerve", "exitNerve",
              "status", "assignedOlHex1", "assignedOlHex2"]
 HEX_COLS = ["assignedOlHex1", "assignedOlHex2"]  # optic-lobe column of columnar neurons
+POS_COLS = ["soma_x", "soma_y", "soma_z"]           # soma position in micrometres (NaN: none)
+VOXEL_UM = 0.008                                    # MaleCNS voxels are 8 nm
 
 # Named subsets of the brain. The full CNS is 165k neurons / 25.6M edges,
 # which is slow to step; the optic lobes alone are ~95k neurons. The nerve
@@ -47,6 +49,21 @@ VNC_SUPERCLASSES = ["vnc_intrinsic", "vnc_sensory", "vnc_motor", "vnc_efferent",
                     "sensory_ascending", "sensory_descending",
                     "efferent_ascending", "efferent_descending"]
 OPTIC_SUPERCLASSES = ["ol_intrinsic", "ol_sensory"]
+
+
+def _soma_xyz(ann: pd.DataFrame) -> pd.DataFrame:
+    """The ``somaLocation`` column (a voxel triple per neuron, or None) as three float32
+    columns in micrometres, NaN where a neuron has no soma in the volume (sensory neurons)."""
+    xyz = np.full((len(ann), 3), np.nan, np.float32)
+    if "somaLocation" in ann.columns:
+        for i, loc in enumerate(ann["somaLocation"].values):
+            if loc is not None and len(loc) == 3:
+                xyz[i] = np.asarray(loc, np.float64) * VOXEL_UM
+    return pd.DataFrame(xyz, columns=POS_COLS, index=ann.index)
+
+
+def _is_vnc_name(superclass: str) -> bool:
+    return superclass in VNC_SUPERCLASSES
 
 
 def _is_vnc(cx):
@@ -179,6 +196,61 @@ class Connectome:
             visited[frontier] = True
         return np.flatnonzero(visited)
 
+    def positions(self, fill: bool = True, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+        """Every neuron's soma position in micrometres, (n, 3) float32, and a bool mask
+        of which are real. Neurons without a soma in the volume (sensory neurons, whose
+        cell bodies sit in the periphery) get, with ``fill``, a place near the neurons
+        they are annotated with: the same region (nerve cord, central brain, optic lobe),
+        segment (a leg's neuromere, from the soma or the entry nerve) and side when any
+        such neuron has a soma, else the same region and side, else the region, else the
+        whole brain, scattered by that group's spread. Deterministic. Without ``fill``
+        they stay NaN."""
+        if all(c in self.neurons.columns for c in POS_COLS):
+            xyz = self.neurons[POS_COLS].values.astype(np.float32)
+        else:
+            xyz = np.full((self.n, 3), np.nan, np.float32)
+        known = np.isfinite(xyz).all(axis=1)
+        if not fill or known.all() or not known.any():
+            return xyz, known
+        rng = np.random.default_rng(seed)
+        df = self.neurons
+
+        def col(name):
+            if name not in df.columns:
+                return np.full(self.n, "", dtype=object)
+            return df[name].fillna("").astype(str).values
+
+        superclass, soma_side, root_side = col("superclass"), col("somaSide"), col("rootSide")
+        region = np.asarray([("vnc" if _is_vnc_name(sc) else sc.split("_")[0])
+                             for sc in superclass], dtype=object)
+        side = np.where(soma_side == "", root_side, soma_side)
+        nerve_segment = {v: k for k, v in LEG_NERVE.items()}
+        segment = col("somaNeuromere")
+        entry = col("entryNerve")
+        segment = np.asarray([seg or nerve_segment.get(e, "") for seg, e in zip(segment, entry)],
+                             dtype=object)
+        levels = [list(zip(region, segment, side)), list(zip(region, side)), list(region),
+                  [""] * self.n]
+        out = xyz.copy()
+        todo = np.flatnonzero(~known)
+        for level in levels:
+            if not len(todo):
+                break
+            groups: dict = {}
+            for i in np.flatnonzero(known):
+                groups.setdefault(level[i], []).append(i)
+            rest = []
+            for i in todo:
+                members = groups.get(level[i])
+                if not members:
+                    rest.append(i)
+                    continue
+                pts = xyz[members]
+                centre, spread = pts.mean(axis=0), pts.std(axis=0) + 1.0
+                out[i] = centre + rng.normal(size=3) * spread * 0.5
+            todo = np.asarray(rest, dtype=np.int64)
+        return out.astype(np.float32), known
+
     # --- construction ---------------------------------------------------------
 
     @classmethod
@@ -207,14 +279,22 @@ class Connectome:
                                              columns=["bodyId"] + missing)
                 neurons = neurons.merge(extra, on="bodyId", how="left")
                 neurons.to_feather(n_path)
+            if any(c not in neurons.columns for c in POS_COLS):
+                extra = feather.read_feather(path("body-annotations.feather"),
+                                             columns=["bodyId", "somaLocation"])
+                extra = pd.concat([extra[["bodyId"]], _soma_xyz(extra)], axis=1)
+                neurons = neurons.merge(extra, on="bodyId", how="left")
+                neurons.to_feather(n_path)
             return cls(neurons, W)
 
         if verbose:
             print("reading annotations ...")
-        ann = feather.read_feather(path("body-annotations.feather"), columns=KEEP_COLS)
+        ann = feather.read_feather(path("body-annotations.feather"),
+                                   columns=KEEP_COLS + ["somaLocation"])
         if status:
             ann = ann[ann["status"] == status]
         ann = ann.reset_index(drop=True)
+        ann = pd.concat([ann.drop(columns=["somaLocation"]), _soma_xyz(ann)], axis=1)
         nt = feather.read_feather(path("body-neurotransmitters.feather"),
                                   columns=["body", "consensus_nt"])
         nt = nt.rename(columns={"body": "bodyId", "consensus_nt": "nt"})
@@ -346,6 +426,25 @@ class Connectome:
             sub = ["wind_gravity", "haltere", "auditory"][k % 3]
             df.loc[i, ["class", "subclass"]] = ["mechanosensory", sub]
         df.loc[superclass == "descending_neuron", "subclass"] = "xn"
+        # somas in a schematic brain: eyes left and right, head above the nerve cord;
+        # sensory neurons have none, like the real data
+        centres = {"ol_intrinsic": (0, 0, 0), "visual_projection": (0, 60, 0),
+                   "cb_intrinsic": (0, 120, 0), "cb_sensory": None, "descending_neuron":
+                   (0, 220, 0), "ascending_neuron": (0, 320, 0), "vnc_intrinsic": (0, 420, 0),
+                   "vnc_motor": (0, 480, 0), "vnc_sensory": None}
+        xyz = np.full((n, 3), np.nan, np.float32)
+        for i in range(n):
+            c = centres[superclass[i]]
+            if c is None:
+                continue
+            x = rng.normal(0, 40)
+            if superclass[i] == "ol_intrinsic":
+                x = (-160 if df.loc[i, "somaSide"] == "L" else 160) + rng.normal(0, 25)
+            elif df.loc[i, "somaSide"] in ("L", "R"):
+                x = (-40 if df.loc[i, "somaSide"] == "L" else 40) + rng.normal(0, 20)
+            xyz[i] = [c[0] + x, c[1] + rng.normal(0, 25), c[2] + rng.normal(0, 25)]
+        for k, c in enumerate(POS_COLS):
+            df[c] = xyz[:, k]
         df["nt"] = rng.choice(["acetylcholine", "gaba", "glutamate"], size=n, p=[0.7, 0.15, 0.15])
         df["sign"] = df["nt"].map(NT_SIGN).astype(np.int8)
 

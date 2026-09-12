@@ -122,8 +122,10 @@ def build_model(cx: Connectome, layout: ControlLayout, *, readout="descending", 
                          dopamine_punish=dopamine_punish, name=name or cx.name,
                          meta=dict(meta or {}, connectome=cx.name, n_neurons=cx.n,
                                    readout=readout if isinstance(readout, str) else "custom"))
+    positions, known = cx.positions()
     return Model(brain, readout_idx=readout_idx, layout=layout, retina=retina,
                  audition=audition, policy=policy, config=config, punish_idx=punish,
                  neuron_ids=cx.neurons["bodyId"].values,
                  neuron_types=cx.neurons["type"].values,
-                 neuron_superclass=cx.neurons["superclass"].values)
+                 neuron_superclass=cx.neurons["superclass"].values,
+                 neuron_positions=positions, positions_known=known)

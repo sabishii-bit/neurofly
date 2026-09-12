@@ -22,7 +22,8 @@ import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from neurofly_core.experiments import ProbeLog, add_experiment_args, apply_experiments
+from neurofly_core.experiments import (ProbeLog, activity_sinks, add_experiment_args,
+                                       apply_experiments)
 from neurofly_training.envs import ENV_ARGS, is_pc_task, list_tasks, make_env
 from neurofly_training.body.export import PoseRecorder
 from neurofly_training.experiments import apply_to_body_env
@@ -116,6 +117,12 @@ def main():
         for line in apply_to_body_env(env, args):
             print(line)
         probe = None
+    sinks = None
+    if getattr(env, "last_activity", "no") != "no" or pc:
+        sinks = activity_sinks(env.model if pc else env, args,
+                               fps=(env.fps if pc else CONTROL_HZ / every))
+        for line in sinks.describe():
+            print(line)
     venv = DummyVecEnv([lambda: env])
     venv, model, decoder = load_policy(policy, args.run, dict(cfg, task=env_kwargs["task"]),
                                        env, venv)
@@ -159,6 +166,8 @@ def main():
             obs, reward, dones, infos = venv.step(action)
             if probe is not None:
                 probe.record()
+            if sinks is not None and steps % every == 0:
+                sinks.record()
             ret += float(reward[0])
             spikes += int(infos[0].get("brain_spikes", 0))
             held.update(infos[0].get("held", []))
@@ -185,6 +194,10 @@ def main():
         print(f"wrote {len(frames)} frames to {args.video}")
     if probe is not None and probe.save():
         print(f"probe written to {args.probe_out}")
+    if sinks is not None:
+        written = sinks.close()
+        if written:
+            print(f"activity written to {written}")
     if caster is not None:
         caster.close()
     if poses is not None:

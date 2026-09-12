@@ -5,6 +5,9 @@ Starting points to copy into your own project. Nothing here is imported by the p
 | File | What it shows |
 |---|---|
 | `health_bar_task.py` | a `Task` that reads a bar on the screen for reward, ends the episode when it empties, and presses a key to restart |
+| `brain_viewer.html` | the brain as a point cloud lit by its spikes, from `--activity-out` files or an `--activity-ws` / `serve --ws` stream; synapses from an artifact |
+| `three_viewer.html` | the exported fly body animated from `watch --poses` files or a `--pose-ws` stream |
+| `node_consumer.js`, `node_train_es.js` | driving and training a served brain from Node |
 
 Run one against a window, without touching anything, to check that the reward reads what
 you think it reads:

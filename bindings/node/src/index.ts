@@ -13,7 +13,7 @@ export interface Info {
   ok: boolean; ready?: boolean; name: string; n_neurons: number; n_features: number;
   n_actions: number; controls: string[]; layout: Layout; brain_ms: number; has_policy: boolean;
   has_audition: boolean; sample_rate: number | null; retina_grid: [number, number];
-  has_annotations: boolean; populations: Record<string, number>;
+  has_annotations: boolean; has_positions: boolean; populations: Record<string, number>;
 }
 
 export interface StepInput {
@@ -33,14 +33,25 @@ export interface StepInput {
 
 export interface Probe { spikes: number[]; rates: number[]; }
 
+/** Every neuron that fired during one step (see `activity()`). */
+export interface Activity { t: number; indices: number[]; counts: number[]; steps?: number[][]; }
+
+/** Where every neuron is, for drawing the brain (see `positions()`). */
+export interface BrainMap {
+  ok: true; n: number; unit: string; positions: number[][] | null; known: boolean[] | null;
+  superclass: string[] | null; populations: Record<string, number[]>;
+}
+
 export interface StepResult {
   ok: true; t: number; spikes: number; action: number[]; held: string[];
   keys: string[]; buttons: string[]; dx: number; dy: number; scroll: number;
   pad_buttons?: string[]; axes?: Record<string, number>;
-  features?: number[]; probe?: Probe;
+  features?: number[]; probe?: Probe; activity?: Activity;
 }
 
-export interface ObserveResult { ok: true; t: number; spikes: number; features: number[]; probe?: Probe; }
+export interface ObserveResult {
+  ok: true; t: number; spikes: number; features: number[]; probe?: Probe; activity?: Activity;
+}
 
 export type LinearPolicy = { type: "linear"; W: number[][]; b: number[] };
 export type MlpPolicy = {
@@ -156,6 +167,14 @@ export class NeuroFly {
 
   /** Undo every stimulation and silencing. */
   clear(): Promise<{ ok: true }> { return this.send({ op: "clear" }); }
+
+  /** Later step / observe results carry `activity`: every neuron that fired. */
+  activity(on = true, substeps = false): Promise<{ ok: true; n: number }> {
+    return this.send({ op: "activity", on, substeps });
+  }
+
+  /** Every neuron's position (micrometres) and superclass, for a viewer. */
+  positions(): Promise<BrainMap> { return this.send({ op: "positions" }); }
 
   /** Neuron indices of a selection. */
   select(sel: Selection): Promise<{ ok: true; n: number; indices: number[] }> {

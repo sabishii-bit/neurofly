@@ -50,6 +50,8 @@ class BrainInLoopEnv(gym.Env):
         self.action_space = body.action_space
         self.render_mode = body.render_mode
         self._last_body_obs = None
+        self.activity = None            # a SpikeAccumulator when watch_activity is on
+        self.last_activity = None
 
     def _features(self) -> np.ndarray:
         feats = self.brain.rates(self.readout_idx) / 100.0
@@ -60,11 +62,34 @@ class BrainInLoopEnv(gym.Env):
     def _run_brain(self, body_obs: np.ndarray, n_steps: int, dopamine: float = 0.0) -> int:
         drive = self.encoder(body_obs)
         before = self.brain.total_spikes
+        if self.activity is not None:
+            self.activity.begin()
         for _ in range(n_steps):
-            self.brain.step(drive)
+            spikes = self.brain.step(drive)
             if self.plasticity is not None:
                 self.plasticity.step(dopamine)
+            if self.activity is not None:
+                self.activity.add(spikes)
+        if self.activity is not None:
+            self.last_activity = self.activity.finish()
         return self.brain.total_spikes - before
+
+    def watch_activity(self, on: bool = True, substeps: bool = False) -> int:
+        """As ``BrainModel.watch_activity``: every neuron's spikes per control step."""
+        from neurofly_core.activity import SpikeAccumulator
+        if not on:
+            self.activity = self.last_activity = None
+            return 0
+        self.activity = SpikeAccumulator(self.cx.n, substeps=substeps, device=self.brain.device)
+        return int(self.cx.n)
+
+    def activity_map(self) -> dict:
+        positions, known = self.cx.positions()
+        return {"n": int(self.cx.n), "unit": "micrometre", "positions": positions,
+                "known": known,
+                "superclass": self.cx.neurons["superclass"].fillna("").astype(str).tolist(),
+                "populations": {"readout": self.readout_idx, "motor": self.pops.all_leg_motor,
+                                "descending": self.pops.descending}}
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)

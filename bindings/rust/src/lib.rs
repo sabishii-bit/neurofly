@@ -51,6 +51,17 @@ pub struct StepResult {
     pub scroll: f64,
     #[serde(default)]
     pub features: Vec<f32>,
+    /// Every neuron that fired, after `activity(true)`.
+    #[serde(default)]
+    pub activity: Option<Activity>,
+}
+
+/// One step's brain activity: which neurons fired and how many times each.
+#[derive(Debug, Deserialize)]
+pub struct Activity {
+    pub t: u64,
+    pub indices: Vec<u64>,
+    pub counts: Vec<u32>,
 }
 
 /// One step's input. Build with [`Step::rgb`] or [`Step::encoded`], then chain
@@ -220,6 +231,20 @@ impl Client {
         let _: serde_json::Value = self.call(&serde_json::json!({
             "op": "set_policy", "type": "linear", "W": w, "b": b }))?;
         Ok(())
+    }
+
+    /// Record every neuron's spikes: later `step` / `observe` results carry an `activity`
+    /// object (`t`, `indices`, `counts`) in their raw JSON. Returns the neuron count.
+    pub fn activity(&mut self, on: bool) -> Result<u64, Error> {
+        #[derive(Deserialize)]
+        struct Count { n: u64 }
+        let r: Count = self.call(&serde_json::json!({"op": "activity", "on": on}))?;
+        Ok(r.n)
+    }
+
+    /// Every neuron's position (micrometres) and superclass, as the raw JSON reply.
+    pub fn positions(&mut self) -> Result<serde_json::Value, Error> {
+        self.call(&serde_json::json!({"op": "positions"}))
     }
 
     /// Write the runtime's current model (with the installed policy) as an artifact.

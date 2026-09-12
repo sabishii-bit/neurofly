@@ -21,6 +21,8 @@ service NeuroFly {
   rpc Probe(Selection) returns (Count);               // empty Selection turns the probe off
   rpc Clear(Empty) returns (Ack);
   rpc Select(Selection) returns (Indices);
+  rpc Activity(ActivityRequest) returns (Count);   // record every neuron's spikes; replies carry them
+  rpc Positions(Empty) returns (PositionsReply);   // where every neuron is, for a viewer
 }
 
 message Empty {}
@@ -60,6 +62,22 @@ message StepRequest {
 
 message ProbeReply { repeated int32 spikes = 1; repeated float rates = 2; }
 
+message ActivityRequest { bool on = 1; bool substeps = 2; }
+message ActivityReply {
+  int32 t = 1;
+  repeated int64 indices = 2;      // neurons that fired during the observation
+  repeated int32 counts = 3;       // how many times each
+  repeated Indices steps = 4;      // per brain step, when substeps was requested
+}
+message PositionsReply {
+  int32 n = 1;
+  string unit = 2;                 // "micrometre"
+  repeated float positions = 3;    // n x 3, row-major; empty when the artifact has none
+  repeated bool known = 4;         // true for a real soma, false for a placed one
+  repeated string superclass = 5;
+  map<string, Indices> populations = 6;
+}
+
 message StepReply {
   bool ok = 1;
   string error = 2;
@@ -76,6 +94,7 @@ message StepReply {
   ProbeReply probe = 13;          // when a probe is set
   repeated string pad_buttons = 14;
   map<string, double> axes = 15;
+  ActivityReply activity = 16;    // when Activity is on
 }
 
 message BodyRequest {
@@ -92,6 +111,7 @@ message BodyReply {
   repeated float action = 5;      // actuator commands in [-1, 1]
   repeated float features = 6;    // observe_only, or without a policy
   ProbeReply probe = 7;
+  ActivityReply activity = 8;
 }
 
 message Layer { int32 rows = 1; int32 cols = 2; repeated double w = 3; repeated double b = 4; }  // w row-major
